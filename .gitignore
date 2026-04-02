@@ -1,10 +1,15 @@
 .DS_Store
 __pycache__
+**/__pycache__/
 *.egg-info
 .venv
+.conda/
 MUJOCO_LOG.TXT
 mujoco_menagerie
 checkpoints/
+logs/
+wandb/
+*.wandb
 
 
 # --- 强化学习相关 ---
@@ -27,9 +32,11 @@ checkpoints/
 *.out
 *.tfevents.*
 core.*
+*.pid
 
 # --- IDE 和系统文件 ---
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 .history/
 .ipynb_checkpoints/
