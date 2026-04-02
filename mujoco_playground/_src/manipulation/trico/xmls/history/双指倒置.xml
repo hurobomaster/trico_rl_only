@@ -1,0 +1,249 @@
+<mujoco model="spatial_parallelogram_dual_finger_silicone">
+  <!-- 
+       MJX 兼容性注意：
+       1. 确保使用 smooth contact (solref/solimp) 而不是 hard contact。
+       2. 所有的 mesh/geom 最好是 convex 的（这里用的 sphere/box 都是完美的）。
+  -->
+  <compiler angle="degree" coordinate="local" eulerseq="xyz" inertiafromgeom="true"/>
+  
+  <option timestep="0.001" gravity="0 0 -9.81" iterations="50" tolerance="1e-10"/>
+
+  <visual>
+    <headlight diffuse="0.4 0.4 0.4" ambient="0.2 0.2 0.2" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <default>
+    <geom type="box" rgba="0.7 0.7 0.7 0.6" contype="0" conaffinity="0"/>
+    <joint damping="0.05" armature="0.01" frictionloss="0.01"/>
+    
+    <default class="viz_axis">
+        <geom type="box" size="0.0008 0.0002 0.0002" contype="0" conaffinity="0" rgba="1 1 1 0.1"/>
+    </default>
+    <default class="global_axis">
+        <geom type="cylinder" size="0.002" contype="0" conaffinity="0"/>
+    </default>
+
+    <!-- ==============================================================
+         新增：硅胶材质定义 (Smooth-On 00-30 模拟)
+         ============================================================== -->
+    <default class="silicone_tip">
+        <!-- 
+           friction="1.5 0.1 0.05":
+             - 1.5: 切向摩擦 (非常粘)
+             - 0.1: 扭转摩擦 (抵抗旋转，模拟接触面)
+             - 0.05: 滚动摩擦
+           
+           solref="0.01 1": 
+             - 0.01: 时间常数 (Time constant)。值越大，接触越软。
+                     0.001 是硬塑料，0.01~0.02 比较像软胶。
+             - 1: 阻尼比 (Damping ratio)。1 表示临界阻尼，防止接触时震荡。
+           
+           condim="6": 开启所有摩擦维度 (切向+扭转+滚动)
+           priority="1": 确保这个接触参数优先于地板或物体的参数
+        -->
+        <geom friction="1.5 0.1 0.05" solref="0.02 1" solimp="0.95 0.99 0.001" margin="0.001" condim="6" priority="1"/>
+    </default>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" width="100" height="100"/>
+    <material name="groundplane" texture="groundplane" texrepeat="10 10"/>
+  </asset>
+
+  <worldbody>
+  
+    <camera name="closeup" pos="0.3 -0.3 0.3" xyaxes="0.7 0.7 0 -0.4 0.4 0.8" mode="trackcom"/>
+    
+    <geom name="floor" size="0 0 .05" type="plane" material="groundplane" condim="3" contype="1" conaffinity="1"/>
+    <light pos="0 0 3" dir="0 0 -1" directional="true" castshadow="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>
+
+    <body name="world_axis" pos="0 0 0">
+        <geom class="global_axis" fromto="0 0 0  0.025 0 0" rgba="1 0 0 1"/> 
+        <geom class="global_axis" fromto="0 0 0  0 0.025 0" rgba="0 1 0 1"/> 
+        <geom class="global_axis" fromto="0 0 0  0 0 0.025" rgba="0 0 1 1"/> 
+    </body>
+
+    <!-- Object 物体-->
+    <body name="object" pos="0 0 0.025">
+        <freejoint/>
+        <!-- 
+             物体也必须有足够的 friction，但主要由指尖的 priority 决定交互。
+             这里 condim 设为 3 即可，指尖的 condim=6 会主导碰撞。
+        -->
+        <geom name="object_geom" type="box" size="0.025 0.025 0.025" rgba="0.2 0.9 0.2 1" mass="0.05" condim="3" contype="1" conaffinity="1"/>
+        <site name="object_center" rgba="0 0 0 0"/>
+    </body>
+
+    <!-- Hand Base -->
+    <body name="hand_base" pos="0 0 0.16" euler="0 180 0">
+
+        <!-- Right Finger -->
+        <body name="figer_right" pos="0 -0.08 0">
+            <body name="Frame_O_right" pos="0 0 0">
+                <geom class="viz_axis" pos="0.0017 0 0" size="0.0017 0.0002 0.0002" rgba="1 0 0 1"/> 
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 1"/> 
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 1"/> 
+            </body>
+
+            <body name="Link_OA_Chain_right" pos="0 0 0" euler="116 0 0"> 
+                <joint name="OA_active_x_right"  type="hinge" axis="1 0 0" range="0 140" damping="0.5"/>
+                <joint name="OA_passive_z_right" type="hinge" axis="0 0 1" range="-60 60" damping="0.1"/>
+                <joint name="OA_active_y_right"  type="hinge" axis="0 1 0" range="-16 16" damping="0.5"/>
+                <geom name="geom_OA_right" fromto="0 0 0  0 0 -0.034" size="0.0005" rgba="0.8 0.2 0.2 1"/>
+            
+                <body name="Link_AC_right" pos="0 0 -0.034" euler="90 0 0">
+                    <body name="Frame_A_right" pos="0 0 0">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                    <joint name="A_passive_x_right" type="hinge" axis="1 0 0" damping="0.1"/>
+                    <geom name="geom_AC_right" fromto="0 0 0  0 0 -0.085" size="0.0005" rgba="0.8 0.5 0.5 0.6"/>
+                    <site name="site_C_pivot_A_right" pos="0 0 -0.085" size="0.005" rgba="1 1 0 0"/>
+                    <site name="site_C_axis_A_right" pos="0.02 0 -0.085" size="0.003" rgba="1 0.5 0 0"/>
+                    <body name="Frame_C_from_A_right" pos="0 0 -0.085">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                </body>
+            </body>
+
+            <body name="Link_OB_Chain_right" pos="0 0 0" euler="206 0 0">
+                <joint name="OB_active_x_right"  type="hinge" axis="1 0 0" range="-90 50" damping="0.5"/>
+                <joint name="OB_passive_z_right" type="hinge" axis="0 0 1" range="-180 180" damping="0.1"/>
+                <joint name="OB_active_y_right"  type="hinge" axis="0 1 0" range="-16 16" damping="0.5"/>
+                <geom name="geom_OB_right" fromto="0 0 0  0 0 -0.085" size="0.0005" rgba="0.2 0.8 0.2 1"/>
+                
+                <body name="Link_BCP_right" pos="0 0 -0.085" euler="-90 0 0">
+                    <body name="Frame_B_right" pos="0 0 0">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                    <joint name="B_passive_x_right" type="hinge" axis="1 0 0" damping="0.1"/>
+                    <geom name="geom_BP_right" fromto="0 0 0  0 0 -0.080" size="0.0005" rgba="0.2 0.2 0.8 0.6" />
+                    <site name="site_C_pivot_B_right" pos="0 0 -0.034" size="0.005" rgba="1 1 0 0"/>
+                    <site name="site_C_axis_B_right" pos="0.02 0 -0.034" size="0.003" rgba="1 0.5 0 0"/>
+                    <body name="Frame_C_from_B_right" pos="0 0 -0.034">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                    <body name="Frame_P_right" pos="0 0 -0.080">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+
+                    <!-- ================= 使用了硅胶材质类 ================= -->
+                    <geom name="tip_geom_right" class="silicone_tip" pos="0 0 -0.080" size="0.006" type="sphere" rgba="0 1 1 1" contype="1" conaffinity="1"/>
+                
+                </body>
+            </body>
+        </body>
+
+        <!-- Left Finger -->
+        <body name="figer_left" pos="0 0.08 0" euler="0 0 180">
+            <body name="Frame_O_left" pos="0 0 0">
+                <geom class="viz_axis" pos="0.0017 0 0" size="0.0017 0.0002 0.0002" rgba="1 0 0 1"/> 
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 1"/> 
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 1"/> 
+            </body>
+
+            <body name="Link_OA_Chain_left" pos="0 0 0" euler="116 0 0"> 
+                <joint name="OA_active_x_left"  type="hinge" axis="1 0 0" range="0 140" damping="0.5"/>
+                <joint name="OA_passive_z_left" type="hinge" axis="0 0 1" range="-60 60" damping="0.1"/>
+                <joint name="OA_active_y_left"  type="hinge" axis="0 1 0" range="-16 16" damping="0.5"/>
+                <geom name="geom_OA_left" fromto="0 0 0  0 0 -0.034" size="0.0005" rgba="0.8 0.2 0.2 1"/>
+            
+                <body name="Link_AC_left" pos="0 0 -0.034" euler="90 0 0">
+                    <body name="Frame_A_left" pos="0 0 0">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0.0017 0 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                    <joint name="A_passive_x_left" type="hinge" axis="1 0 0" damping="0.1"/>
+                    <geom name="geom_AC_left" fromto="0 0 0  0 0 -0.085" size="0.0005" rgba="0.8 0.5 0.5 0.6"/>
+                    <site name="site_C_pivot_A_left" pos="0 0 -0.085" size="0.005" rgba="1 1 0 0"/>
+                    <site name="site_C_axis_A_left" pos="0.02 0 -0.085" size="0.003" rgba="1 0.5 0 0"/>
+                    <body name="Frame_C_from_A_left" pos="0 0 -0.085">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                </body>
+            </body>
+
+            <body name="Link_OB_Chain_left" pos="0 0 0" euler="206 0 0">
+                <joint name="OB_active_x_left"  type="hinge" axis="1 0 0" range="-90 50" damping="0.5"/>
+                <joint name="OB_passive_z_left" type="hinge" axis="0 0 1" range="-180 180" damping="0.1"/>
+                <joint name="OB_active_y_left"  type="hinge" axis="0 1 0" range="-16 16" damping="0.5"/>
+                <geom name="geom_OB_left" fromto="0 0 0  0 0 -0.085" size="0.0005" rgba="0.2 0.8 0.2 1"/>
+                
+                <body name="Link_BCP_left" pos="0 0 -0.085" euler="-90 0 0">
+                    <body name="Frame_B_left" pos="0 0 0">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                    <joint name="B_passive_x_left" type="hinge" axis="1 0 0" damping="0.1"/>
+                    <geom name="geom_BP_left" fromto="0 0 0  0 0 -0.080" size="0.0005" rgba="0.2 0.2 0.8 0.6" />
+                    <site name="site_C_pivot_B_left" pos="0 0 -0.034" size="0.005" rgba="1 1 0 0"/>
+                    <site name="site_C_axis_B_left" pos="0.02 0 -0.034" size="0.003" rgba="1 0.5 0 0"/>
+                    <body name="Frame_C_from_B_left" pos="0 0 -0.034">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+                    <body name="Frame_P_left" pos="0 0 -0.080">
+                        <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                        <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+                    </body>
+
+                    <!-- ================= 使用了硅胶材质类 ================= -->
+                    <geom name="tip_geom_left" class="silicone_tip" pos="0 0 -0.080" size="0.006" type="sphere" rgba="0 1 1 1" contype="1" conaffinity="1"/>
+                
+                </body>
+            </body>
+        </body>
+    </body>
+
+  </worldbody>
+
+  <equality>
+    <connect name="C_pivot_right" site1="site_C_pivot_A_right" site2="site_C_pivot_B_right" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <connect name="C_axis_right"  site1="site_C_axis_A_right"  site2="site_C_axis_B_right"  solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <connect name="C_pivot_left" site1="site_C_pivot_A_left" site2="site_C_pivot_B_left" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <connect name="C_axis_left"  site1="site_C_axis_A_left"  site2="site_C_axis_B_left"  solimp="0.9 0.95 0.001" solref="0.02 1"/>
+  </equality>
+
+  <tendon>
+    <fixed name="limit_angle_diff_right" range="-1.15192 0.331613">  
+      <joint joint="OB_active_x_right" coef="1"/>
+      <joint joint="OA_active_x_right" coef="-1"/>
+    </fixed>
+
+    <fixed name="limit_angle_diff_left" range="-1.15192 0.331613">  
+      <joint joint="OB_active_x_left" coef="1"/>
+      <joint joint="OA_active_x_left" coef="-1"/>
+    </fixed>
+  </tendon>
+
+  <actuator>
+    <position name="act_OA_x_right" joint="OA_active_x_right" kp="10" kv="1" ctrlrange="0 2.44346"/>
+    <position name="act_OA_y_right" joint="OA_active_y_right" kp="10" kv="1" ctrlrange="-0.28 0.28"/>
+    <position name="act_OB_x_right" joint="OB_active_x_right" kp="10" kv="1" ctrlrange="-1.57 0.872665"/>
+    <position name="act_OB_y_right" joint="OB_active_y_right" kp="10" kv="1" ctrlrange="-0.28 0.28"/>
+
+    <position name="act_OA_x_left" joint="OA_active_x_left" kp="10" kv="1" ctrlrange="0 2.44346"/>
+    <position name="act_OA_y_left" joint="OA_active_y_left" kp="10" kv="1" ctrlrange="-0.28 0.28"/>
+    <position name="act_OB_x_left" joint="OB_active_x_left" kp="10" kv="1" ctrlrange="-1.57 0.872665"/>
+    <position name="act_OB_y_left" joint="OB_active_y_left" kp="10" kv="1" ctrlrange="-0.28 0.28"/>
+  </actuator>
+
+</mujoco>

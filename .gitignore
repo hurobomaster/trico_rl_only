@@ -1,0 +1,43 @@
+.DS_Store
+__pycache__
+*.egg-info
+.venv
+MUJOCO_LOG.TXT
+mujoco_menagerie
+checkpoints/
+
+
+# --- 强化学习相关 ---
+*.pth
+*.pkl
+*.h5
+*.npy
+*.npz
+*.onnx
+
+# --- 视频和可视化 ---
+*.avi
+*.gif
+*.png
+*.jpg
+*.jpeg
+
+# --- 仿真器产生的临时文件 ---
+*.log
+*.out
+*.tfevents.*
+core.*
+
+# --- IDE 和系统文件 ---
+.vscode/
+.idea/
+.history/
+.ipynb_checkpoints/
+.shelf/
+
+# --- 压缩包 ---
+*.zip
+*.tar.gz
+*.rar
+*.mp4
+*.code-workspace

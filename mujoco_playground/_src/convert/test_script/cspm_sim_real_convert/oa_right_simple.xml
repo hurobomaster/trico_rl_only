@@ -1,0 +1,80 @@
+<mujoco model="spatial_parallelogram_dual_finger_silicone_v2">
+  <compiler angle="degree" coordinate="local" eulerseq="xyz" inertiafromgeom="true"/>
+  
+  <!-- 物理参数保持不变 -->
+  <option timestep="0.0005" gravity="0 0 -9.81" iterations="200" tolerance="1e-12" 
+          noslip_iterations="100" integrator="RK4" cone="elliptic">
+    <flag contact="enable"/>
+  </option>
+
+  <visual>
+    <headlight diffuse="0.4 0.4 0.4" ambient="0.2 0.2 0.2" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <default>
+    <geom type="box" rgba="0.7 0.7 0.7 0.6" contype="0" conaffinity="0"/>
+    <joint damping="0.1" armature="0.003" frictionloss="0.02" actuatorfrcrange="-10.0 10.0"/>
+  </default>
+  
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" width="100" height="100"/>
+    <material name="groundplane" texture="groundplane" texrepeat="10 10"/>
+  </asset>
+
+  <worldbody>
+    <camera name="closeup" pos="0.3 -0.3 0.3" xyaxes="0.7 0.7 0 -0.4 0.4 0.8" mode="trackcom"/>
+    
+    <!-- 地板 -->
+    <geom name="floor" type="box" size="1.0 1.0 0.004" pos="0 0 0" material="groundplane" 
+          contype="1" conaffinity="1" 
+          solref="0.001 1" solimp="0.99 0.999 0.001" friction="0.2 0.005 0.0001"/>
+    
+    <light pos="0 0 3" dir="0 0 -1" directional="true" castshadow="false" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>
+
+    <!-- 世界坐标系显示 -->
+    <body name="v1iz_base_frame_right" pos="0 0 0" euler="0 0 0">
+        <geom type="cylinder" size="0.002 0.01" pos="0.01 0 0" euler="0 90 0"  rgba="1 0 0 1" contype="0" conaffinity="0"/> 
+        <geom type="cylinder" size="0.002 0.01" pos="0 0.01 0" euler="-90 0 0" rgba="0 1 0 1" contype="0" conaffinity="0"/> 
+        <geom type="cylinder" size="0.002 0.01" pos="0 0 0.01" euler="0 0 0"   rgba="0 0 1 1" contype="0" conaffinity="0"/> 
+    </body>
+
+
+
+    <!-- Hand Base -->
+    <body name="hand_base" pos="0 0 0.16297187" euler="0 180 0">
+        <!-- Right Finger Base -->
+        <body name="figer_right" pos="0 -0.065 0">
+
+            <!-- 局部坐标系显示 -->
+            <body name="viz_base_frame_right" pos="0 0 0" euler="26 0 0">
+                <geom type="cylinder" size="0.002 0.01" pos="0.01 0 0" euler="0 90 0"  rgba="1 0 0 1" contype="0" conaffinity="0"/> 
+                <geom type="cylinder" size="0.002 0.01" pos="0 0.01 0" euler="-90 0 0" rgba="0 1 0 1" contype="0" conaffinity="0"/> 
+                <geom type="cylinder" size="0.002 0.01" pos="0 0 0.01" euler="0 0 0"   rgba="0 0 1 1" contype="0" conaffinity="0"/> 
+            </body>
+
+            <!-- ★★★ Link OA Chain Right ★★★ -->
+            <body name="Link_OA_Chain_right" pos="0 0 0" euler="147.6 0 0"> 
+                <joint name="OA_active_x_right"  type="hinge" axis="1 0 0" range="-57.6 62.4"/>
+                <joint name="OA_passive_z_right" type="hinge" axis="0 0 1" range="-60 60"/>
+                <joint name="OA_active_y_right"  type="hinge" axis="0 1 0" range="-16 16"/>
+                
+                <!-- 已将 contype/conaffinity 设为 1，确保这是一个有物理碰撞的实体 -->
+                <geom name="geom_OA_right" fromto="0 0 0  0 0 -0.034" size="0.001" 
+                      rgba="0.8 0.2 0.2 1" mass="0.015" 
+                      contype="1" conaffinity="1"/>
+            </body>
+
+        </body> <!-- Close figer_right -->
+    </body> <!-- Close hand_base -->
+
+  </worldbody>
+
+  <actuator>  
+    <position name="act_OA_x_right" joint="OA_active_x_right" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-1.0053 1.089"/>
+    <position name="act_OA_y_right" joint="OA_active_y_right" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-0.28 0.28"/>
+  </actuator>
+
+</mujoco>

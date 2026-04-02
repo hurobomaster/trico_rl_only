@@ -1,0 +1,4 @@
+
+[submodule "Trico-control"]
+	path = Trico-control
+	url = https://github.com/hurobomaster/Trico-Control.git

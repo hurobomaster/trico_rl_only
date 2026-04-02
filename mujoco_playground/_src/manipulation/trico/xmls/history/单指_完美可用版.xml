@@ -1,0 +1,180 @@
+<mujoco model="spatial_parallelogram_parallel_training_v3">
+  <compiler angle="degree" coordinate="local" eulerseq="xyz" inertiafromgeom="true"/>
+  
+  <option timestep="0.001" gravity="0 0 -9.81" iterations="50" tolerance="1e-10"/>
+
+
+
+  <visual>
+    <headlight diffuse="0.4 0.4 0.4" ambient="0.2 0.2 0.2" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+
+
+  <default>
+    <geom type="box" rgba="0.7 0.7 0.7 0.6" contype="0" conaffinity="0"/>
+    <joint damping="0.05" armature="0.01" frictionloss="0.01"/>
+    <default class="viz_axis">
+        <geom type="box" size="0.0008 0.0002 0.0002" contype="0" conaffinity="0" rgba="1 1 1 0.1"/>
+    </default>
+    <default class="global_axis">
+        <geom type="cylinder" size="0.002" contype="0" conaffinity="0"/>
+    </default>
+  </default>
+
+
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" width="100" height="100"/>
+    <material name="groundplane" texture="groundplane" texrepeat="10 10"/>
+  </asset>
+
+
+
+  <worldbody>
+  
+    <camera name="closeup" pos="0.08 -0.14 0.1" xyaxes="0.866 0.5 0 -0.3 0.5 0.8" mode="trackcom"/>
+    
+  
+    <geom name="floor" size="0 0 .05" type="plane" material="groundplane" condim="3"/>
+    <light pos="0 0 3" dir="0 0 -1" directional="true" castshadow="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>
+
+    <body name="world_axis" pos="0 0 0">
+        <geom class="global_axis" fromto="0 0 0  0.025 0 0" rgba="1 0 0 1"/> 
+        <geom class="global_axis" fromto="0 0 0  0 0.025 0" rgba="0 1 0 1"/> 
+        <geom class="global_axis" fromto="0 0 0  0 0 0.025" rgba="0 0 1 1"/> 
+    </body>
+
+
+
+
+
+    
+    <body name="figer_right" pos="0 -0.08 0">
+
+
+
+        <body name="Frame_O" pos="0 0 0">
+            <geom class="viz_axis" pos="0.0017 0 0" size="0.0017 0.0002 0.0002" rgba="1 0 0 1"/> 
+            <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 1"/> 
+            <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 1"/> 
+        </body>
+
+
+
+
+
+        <!-- ==================== OA Chain ==================== -->
+        <body name="Link_OA_Chain" pos="0 0 0" euler="116 0 0"> 
+          <joint name="OA_active_x"  type="hinge" axis="1 0 0" range="0 140" damping="0.5"/>
+          <joint name="OA_passive_z" type="hinge" axis="0 0 1" range="-60 60" damping="0.1"/>
+          <joint name="OA_active_y"  type="hinge" axis="0 1 0" range="-16 16" damping="0.5"/>
+
+          <geom name="geom_OA" fromto="0 0 0  0 0 -0.034" size="0.0005" rgba="0.8 0.2 0.2 1"/>
+        
+
+
+          <body name="Link_AC" pos="0 0 -0.034" euler="90 0 0">
+            <body name="Frame_A" pos="0 0 0">
+                <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+            </body>
+
+            <joint name="A_passive_x" type="hinge" axis="1 0 0" damping="0.1"/>
+            <geom name="geom_AC" fromto="0 0 0  0 0 -0.085" size="0.0005" rgba="0.8 0.5 0.5 0.6"/>
+
+            <site name="site_C_pivot_A" pos="0 0 -0.085" size="0.005" rgba="1 1 0 0"/>
+            <site name="site_C_axis_A" pos="0.02 0 -0.085" size="0.003" rgba="1 0.5 0 0"/>
+
+            <body name="Frame_C_from_A" pos="0 0 -0.085">
+
+                <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+            </body>
+          </body>
+        </body>
+
+
+
+
+
+        <!-- ==================== OB Chain ==================== -->
+        <body name="Link_OB_Chain" pos="0 0 0" euler="206 0 0">
+          <joint name="OB_active_x"  type="hinge" axis="1 0 0" range="-90 50" damping="0.5"/>
+          <joint name="OB_passive_z" type="hinge" axis="0 0 1" range="-180 180" damping="0.1"/>
+          <joint name="OB_active_y"  type="hinge" axis="0 1 0" range="-16 16" damping="0.5"/>
+
+          <geom name="geom_OB" fromto="0 0 0  0 0 -0.085" size="0.0005" rgba="0.2 0.8 0.2 1"/>
+          
+          <body name="Link_BCP" pos="0 0 -0.085" euler="-90 0 0">
+            <body name="Frame_B" pos="0 0 0">
+                <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+            </body>
+
+            <joint name="B_passive_x" type="hinge" axis="1 0 0" damping="0.1"/>
+            <geom name="geom_BP" fromto="0 0 0  0 0 -0.054" size="0.0005" rgba="0.2 0.2 0.8 0.6" />
+            <site name="site_C_pivot_B" pos="0 0 -0.034" size="0.005" rgba="1 1 0 0"/>
+            <site name="site_C_axis_B" pos="0.02 0 -0.034" size="0.003" rgba="1 0.5 0 0"/>
+            <body name="Frame_C_from_B" pos="0 0 -0.034">
+                <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+            </body>
+            <site name="tip_P" pos="0 0 -0.054" size="0.006" rgba="0 1 1 1"/>
+            <body name="Frame_P" pos="0 0 -0.054">
+                <geom class="viz_axis" pos="0.0017 0 0" rgba="1 0 0 0.1"/>
+                <geom class="viz_axis" pos="0 0.0017 0" size="0.0002 0.0017 0.0002" rgba="0 1 0 0.1"/>
+                <geom class="viz_axis" pos="0 0 0.0017" size="0.0002 0.0002 0.0017" rgba="0 0 1 0.1"/>
+            </body>
+          </body>
+        </body>
+    </body>
+  </worldbody>
+
+
+  <equality>
+    <connect name="C_pivot" site1="site_C_pivot_A" site2="site_C_pivot_B" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    <connect name="C_axis"  site1="site_C_axis_A"  site2="site_C_axis_B"  solimp="0.9 0.95 0.001" solref="0.02 1"/>
+  </equality>
+
+
+
+  <tendon>
+  <!--
+    角度  -66 19
+    弧度  -1.15192 0.331613
+    tendon这里强制用弧度制
+  -->
+
+    <fixed name="limit_angle_diff" range="-1.15192 0.331613">  
+      <joint joint="OB_active_x" coef="1"/>
+      <joint joint="OA_active_x" coef="-1"/>
+    </fixed>
+
+
+  </tendon>
+
+
+
+
+
+  <actuator>
+    <position name="act_OA_x" joint="OA_active_x" kp="10" kv="1" ctrlrange="0 2.44346"/>
+    <position name="act_OA_y" joint="OA_active_y" kp="10" kv="1" ctrlrange="-0.28 0.28"/>
+
+    <position name="act_OB_x" joint="OB_active_x" kp="10" kv="1" ctrlrange="-1.57 0.872665"/>
+    <position name="act_OB_y" joint="OB_active_y" kp="10" kv="1" ctrlrange="-0.28 0.28"/>
+  </actuator>
+
+
+
+
+
+</mujoco>

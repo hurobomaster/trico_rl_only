@@ -1,0 +1,331 @@
+<mujoco model="spatial_parallelogram_dual_finger_silicone_v3">
+  <compiler angle="degree" coordinate="local" eulerseq="xyz" inertiafromgeom="true"/>
+  <!-- Timestep 0.0005 = 2000Hz，解决软接触震荡的关键。
+       Gravity -9.81 没问题。 -->
+  <!-- 完美对齐版：指尖、物体、地面全碰撞开启，惯性力已剥离，noslip=100 增强稳定性 -->
+  <option timestep="0.001" gravity="0 0 -9.81" iterations="200" tolerance="1e-12" 
+          noslip_iterations="100" integrator="RK4" cone="elliptic">
+    <flag contact="enable"/>
+  </option>
+
+
+
+
+  <visual>
+    <headlight diffuse="0.4 0.4 0.4" ambient="0.2 0.2 0.2" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+
+
+
+  <default>
+    <!-- 默认 Geom: 关闭所有碰撞，仅作为视觉显示 -->
+    <geom type="box" rgba="0.7 0.7 0.7 0.6" contype="0" conaffinity="0"/>
+    
+    <joint damping="0.1" armature="0.003" frictionloss="0.02" actuatorfrcrange="-10.0 10.0"/>
+
+
+
+    <!-- 碰撞分类定义:
+         Bit 0 (1): 机器人手指
+         Bit 1 (2): 环境物体 (方块/地面)
+    -->
+    
+    <!-- 硅胶指尖 (Shore 45A): 半球形硅胶+纸张优化参数 -->
+    <default class="silicone_tip">
+        <!-- 半径8.2mm的半球硅胶，与PLA+纸张表面接触 -->
+        <!-- solref=(0.0005, 200.0): 极快的响应+极高的刚度防止穿透 -->
+        <!-- solimp=(0.99, 0.995, 0.0001): 更强的阻尼防止穿透 -->
+        <!-- friction=(2.0, 0.02, 0.0001): 增大静摩擦系数 -->
+        <geom type="sphere" size="0.0082"           
+              friction="2.0 0.02 0.0001"
+              solref="0.0005 200.0"
+              solimp="0.99 0.995 0.0001"
+              contype="1" conaffinity="1" condim="6" priority="1"/>
+    </default>
+
+
+
+  </default>
+  
+
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" width="100" height="100"/>
+    <material name="groundplane" texture="groundplane" texrepeat="10 10"/>
+    <mesh name="driver_handle_mesh" file="screw_upper_8.stl"/>
+  </asset>
+
+  <worldbody>
+    <camera name="closeup" pos="0.3 -0.3 0.3" xyaxes="0.7 0.7 0 -0.4 0.4 0.8" mode="trackcom"/>
+    
+    <!-- 地板仅作为视觉参考，TricoDriver 任务中不参与碰撞，避免指尖在底部区域被地面卡住。 -->
+    <geom name="floor" type="box" size="1.0 1.0 0.004" pos="0 0 0" material="groundplane" 
+          contype="0" conaffinity="0" 
+          solref="0.001 1" solimp="0.99 0.999 0.001" friction="0.2 0.005 0.0001"/>
+
+<!-- 测力计模拟器 "red ball" -->
+    <!-- mocap="true": 表示它是一个运动捕捉标记，物理上固定，但可用鼠标拖动 -->
+
+
+    <!-- <body name="red ball" pos="0 0.0 0.15" mocap="true">
+        <geom type="sphere" size="0.010" rgba="1 0 0 1" contype="1" conaffinity="1"/>
+    </body> -->
+
+    
+    <light pos="0 0 3" dir="0 0 -1" directional="true" castshadow="false" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"/>
+
+
+
+
+
+    <!-- Screwdriver task object: fixed base + shaft + rotating handle -->
+    <body name="driver_base" pos="0 0 0.004">
+        <geom name="driver_base_visual" type="cylinder" size="0.1 0.005"
+              pos="0 0 0.005" rgba="0.6 0.6 0.6 1"
+              contype="0" conaffinity="0"/>
+
+        <body name="driver_shaft" pos="0 0 0">
+            <geom name="driver_shaft_geom" type="box" size="0.00625 0.00625 0.01"
+                  pos="0 0 0.01" rgba="0.6 0.6 0.6 1" mass="0.01233075"
+                  contype="1" conaffinity="1"
+                  solref="0.0005 200.0"
+                  solimp="0.99 0.995 0.0001"
+                  friction="2.0 0.02 0.0001"/>
+
+            <body name="driver_handle" pos="0 0 0.01">
+                <joint name="driver_handle_joint" type="hinge" axis="0 0 -1"
+                       range="-36000 36000" damping="0.05" frictionloss="0.05"/>
+                <geom name="driver_handle_collision" type="mesh"
+                      mesh="driver_handle_mesh" pos="0 0 0.01"
+                      rgba="0.8 0.4 0.2 0.15" mass="0.05595962"
+                      contype="1" conaffinity="1"
+                      solref="0.0005 200.0"
+                      solimp="0.99 0.995 0.0001"
+                      friction="2.0 0.02 0.0001"/>
+                <geom name="driver_handle_geom" type="mesh" mesh="driver_handle_mesh"
+                      pos="0 0 0.01" rgba="0.8 0.4 0.2 1"
+                      contype="0" conaffinity="0"/>
+                <site name="driver_handle_center" pos="0 0 0.06" size="0.004"
+                      rgba="1 0 0 0.2"/>
+                <site name="driver_penetration_threshold" pos="0 0 0.06"
+                      size="0.01155" rgba="0 1 0 0.0"/>
+
+                <geom name="driver_handle_stripe_red" type="box"
+                      pos="0 0 0.06" euler="0 0 0"
+                      size="0.001 0.015 0.05" rgba="1 0 0 1"
+                      contype="0" conaffinity="0"/>
+                <geom name="driver_handle_stripe_blue" type="box"
+                      pos="0 0 0.06" euler="0 0 90"
+                      size="0.001 0.015 0.05" rgba="0 0 1 1"
+                      contype="0" conaffinity="0"/>
+            </body>
+        </body>
+    </body>
+
+
+
+
+
+    <body name="v1iz_base_frame_right" pos="0 0 0" euler="0 0 0">
+                <geom type="cylinder" size="0.002 0.01" pos="0.01 0 0" euler="0 90 0"  rgba="1 0 0 1" contype="0" conaffinity="0"/> <!-- X 红 -->
+                <geom type="cylinder" size="0.002 0.01" pos="0 0.01 0" euler="-90 0 0" rgba="0 1 0 1" contype="0" conaffinity="0"/> <!-- Y 绿 -->
+                <geom type="cylinder" size="0.002 0.01" pos="0 0 0.01" euler="0 0 0"   rgba="0 0 1 1" contype="0" conaffinity="0"/> <!-- Z 蓝 -->
+    </body>
+
+
+
+
+
+
+
+    <!-- Hand Base -->
+    <body name="hand_base" pos="0 0 0.17797187" euler="0 180 0">
+        <!-- Right Finger -->
+        <body name="figer_right" pos="0 -0.065 0">
+            <body name="viz_base_frame_right" pos="0 0 0" euler="26 0 0">
+                <geom type="cylinder" size="0.002 0.01" pos="0.01 0 0" euler="0 90 0"  rgba="1 0 0 1" contype="0" conaffinity="0"/> <!-- X 红 -->
+                <geom type="cylinder" size="0.002 0.01" pos="0 0.01 0" euler="-90 0 0" rgba="0 1 0 1" contype="0" conaffinity="0"/> <!-- Y 绿 -->
+                <geom type="cylinder" size="0.002 0.01" pos="0 0 0.01" euler="0 0 0"   rgba="0 0 1 1" contype="0" conaffinity="0"/> <!-- Z 蓝 -->
+            
+                    <!-- [📐 理论参考辅助线] -->
+                    <!-- 逻辑: 从-X看原点, 竖直向上为0, 顺时针为负. -->
+                    <!-- 此时 Local Z 对应 World -Z, Local Y 对应 World Y. -->
+                    
+                    <!-- <body name="ref_lines_right" pos="0 0 0">
+                        <geom type="capsule" fromto="0 0 0  0 -0.0845 0.0534" size="0.0005" rgba="1 1 0 1" contype="0" conaffinity="0"/>
+                        <geom type="capsule" fromto="0 0 0  0 0.0534 0.0845" size="0.0005" rgba="1 0 1 1" contype="0" conaffinity="0"/>
+                    </body> -->
+
+
+                <!-- 116 -> 147.6   31.6 -->
+                <body name="Link_OA_Chain_right" pos="0 0 0" euler="121.6 0 0"> 
+                    <joint name="OA_active_x_right"  type="hinge" axis="1 0 0" range="-57.6 12.4"/>
+                    <joint name="OA_passive_z_right" type="hinge" axis="0 0 1" range="-60 60"/>
+                    <joint name="OA_active_y_right"  type="hinge" axis="0 1 0" range="-14 14"/>
+                    <geom name="geom_OA_right" fromto="0 0 0  0 0 -0.034" size="0.001" rgba="0.8 0.2 0.2 1" mass="0.015" contype="0" conaffinity="0"/>
+                    <body name="Link_AC_right" pos="0 0 -0.034" euler="90 0 0">
+                        <joint name="A_passive_x_right" type="hinge" axis="1 0 0"/>
+                        <geom name="geom_AC_right" fromto="0 0 0  0 0 -0.085" size="0.001" rgba="0.8 0.5 0.5 1" mass="0.015" contype="0" conaffinity="0"/>
+                        <site name="site_C_pivot_A_right" pos="0 0 -0.085" size="0.005" rgba="1 1 0 0"/>
+                        <site name="site_C_axis_A_right" pos="0.02 0 -0.085" size="0.003" rgba="1 0.5 0 0"/>
+                    </body>
+                </body>
+
+
+
+                <!-- 216 -> 237.6 -->
+                <body name="Link_OB_Chain_right" pos="0 0 0" euler="211.6 0 0">
+                    <joint name="OB_active_x_right"  type="hinge" axis="1 0 0" range="-77.6 5"/>
+                    <joint name="OB_passive_z_right" type="hinge" axis="0 0 1" range="-180 180"/>
+                    <joint name="OB_active_y_right"  type="hinge" axis="0 1 0" range="-14 14"/>
+                    <geom name="geom_OB_right" fromto="0 0 0  0 0 -0.085" size="0.001" rgba="0.2 0.8 0.2 1" mass="0.015" contype="0" conaffinity="0"/>
+                    <body name="Link_BCP_right" pos="0 0 -0.085" euler="-90 0 0">
+                        <joint name="B_passive_x_right" type="hinge" axis="1 0 0"/>
+                        <geom name="geom_BP_right" fromto="0 0 0  0 0 -0.0695" size="0.001" rgba="0.2 0.2 0.8 1" mass="0.015" contype="0" conaffinity="0"/>
+                        <site name="site_C_pivot_B_right" pos="0 0 -0.034" size="0.005" rgba="1 1 0 0"/>
+                        <site name="site_C_axis_B_right" pos="0.02 0 -0.034" size="0.003" rgba="1 0.5 0 0"/>
+                        
+
+
+
+
+                        <!-- 虚拟传感器体: 有一定质量确保数值稳定性，防止穿透 -->
+                        <body name="distal_tip_right" pos="0 0 -0.0695">
+                            <geom name="tip_geom_right" class="silicone_tip" pos="0 0 0" type="sphere" rgba="0 0 0 1" mass="0.001"/>
+                            <site name="tip_right" pos="0 0 0"  euler="180 0 90" size="0.005" rgba="1 0 0 0.2" group="2"/>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+
+        <!-- Left Finger -->
+        <body name="figer_left" pos="0 0.065 0" euler="0 0 180">
+            <body name="viz_base_frame_left" pos="0 0 0" euler="26 0 0">
+                <geom type="cylinder" size="0.002 0.01" pos="0.01 0 0" euler="0 90 0" rgba="1 0 0 1" contype="0" conaffinity="0"/> <!-- X 红 -->
+                <geom type="cylinder" size="0.002 0.01" pos="0 0.01 0" euler="-90 0 0" rgba="0 1 0 1" contype="0" conaffinity="0"/> <!-- Y 绿 -->
+                <geom type="cylinder" size="0.002 0.01" pos="0 0 0.01" euler="0 0 0"   rgba="0 0 1 1" contype="0" conaffinity="0"/> <!-- Z 蓝 -->
+              
+                <!-- ... Link OA / OB 结构同之前 ... -->
+                <body name="Link_OA_Chain_left" pos="0 0 0" euler="121.6 0 0">
+                    <joint name="OA_active_x_left"  type="hinge" axis="1 0 0" range="-57.6 62.4"/>
+                    <joint name="OA_passive_z_left" type="hinge" axis="0 0 1" range="-60 60"/>
+                    <joint name="OA_active_y_left"  type="hinge" axis="0 1 0" range="-16 16"/>
+                    <geom name="geom_OA_left" fromto="0 0 0  0 0 -0.034" size="0.001" rgba="0.8 0.2 0.2 1" mass="0.015" contype="0" conaffinity="0"/>
+                    <body name="Link_AC_left" pos="0 0 -0.034" euler="90 0 0">
+                        <joint name="A_passive_x_left" type="hinge" axis="1 0 0"/>
+                        <geom name="geom_AC_left" fromto="0 0 0  0 0 -0.085" size="0.001" rgba="0.8 0.5 0.5 1" mass="0.015" contype="0" conaffinity="0"/>
+                        <site name="site_C_pivot_A_left" pos="0 0 -0.085" size="0.005" rgba="1 1 0 0"/>
+                        <site name="site_C_axis_A_left" pos="0.02 0 -0.085" size="0.003" rgba="1 0.5 0 0"/>
+                    </body>
+                </body>
+
+                <body name="Link_OB_Chain_left" pos="0 0 0" euler="211.6 0 0">
+                    <joint name="OB_active_x_left"  type="hinge" axis="1 0 0" range="-77.6 32.4"/>
+                    <joint name="OB_passive_z_left" type="hinge" axis="0 0 1" range="-180 180"/>
+                    <joint name="OB_active_y_left"  type="hinge" axis="0 1 0" range="-16 16"/>
+                    <geom name="geom_OB_left" fromto="0 0 0  0 0 -0.085" size="0.001" rgba="0.2 0.8 0.2 1" mass="0.015" contype="0" conaffinity="0"/>
+                    <body name="Link_BCP_left" pos="0 0 -0.085" euler="-90 0 0">
+                        <joint name="B_passive_x_left" type="hinge" axis="1 0 0"/>
+                        <geom name="geom_BP_left" fromto="0 0 0  0 0 -0.0695" size="0.001" rgba="0.2 0.2 0.8 1" mass="0.015" contype="0" conaffinity="0"/>
+                        <site name="site_C_pivot_B_left" pos="0 0 -0.034" size="0.005" rgba="1 1 0 0"/>
+                        <site name="site_C_axis_B_left" pos="0.02 0 -0.034" size="0.003" rgba="1 0.5 0 0"/>
+                        
+                        <!-- 虚拟传感器体: 有一定质量确保数值稳定性，防止穿透 -->
+                        <body name="distal_tip_left" pos="0 0 -0.0695">
+                            <geom name="tip_geom_left" class="silicone_tip" pos="0 0 0" type="sphere" rgba="1 1 1 1" mass="0.001"/>
+                            <site name="tip_left" pos="0 0 0"  euler="180 0 90" size="0.005" rgba="1 1 0 0.8" group="2"/>
+                        </body>
+
+
+
+                        
+                    </body>
+                </body> 
+
+            </body>
+
+        </body>
+
+    </body>
+  </worldbody>
+
+
+
+
+
+  <equality>
+      <!-- 
+        ★ 并联结构刚度修正 ★
+        solref="0.002 1": 
+            第一个数 (0.002) 是时间常数。越小越硬！
+            原值 0.02 对应 20ms 的修正时间，对于刚性连杆来说太慢了，导致连接点看起来“软”。
+            改为 0.002 (2ms) 会让连接点极其坚固。
+        
+        solimp="0.99 0.999 0.001":
+            把约束力的响应曲线拉得非常陡峭，几乎不允许任何违反约束的位移。
+      -->
+      <connect name="C_pivot_right" site1="site_C_pivot_A_right" site2="site_C_pivot_B_right" solimp="0.99 0.999 0.001" solref="0.002 1"/>
+      <connect name="C_axis_right"  site1="site_C_axis_A_right"  site2="site_C_axis_B_right"  solimp="0.99 0.999 0.001" solref="0.002 1"/>
+      
+      <connect name="C_pivot_left" site1="site_C_pivot_A_left" site2="site_C_pivot_B_left" solimp="0.99 0.999 0.001" solref="0.002 1"/>
+      <connect name="C_axis_left"  site1="site_C_axis_A_left"  site2="site_C_axis_B_left"  solimp="0.99 0.999 0.001" solref="0.002 1"/>
+    </equality>
+
+    <contact>
+        <!-- 彻底禁止机器人肢体自碰撞，解决 2s stutters 并消除接近物体前的微波 F 干扰 -->
+        <exclude body1="hand_base" body2="distal_tip_right"/>
+        <exclude body1="hand_base" body2="distal_tip_left"/>
+        <exclude body1="hand_base" body2="Link_BCP_right"/>
+        <exclude body1="hand_base" body2="Link_BCP_left"/>
+    </contact>
+
+
+  <tendon>
+    <fixed name="limit_angle_diff_right" range="-1.15192 0.331613">  
+      <joint joint="OB_active_x_right" coef="1"/>
+      <joint joint="OA_active_x_right" coef="-1"/>
+    </fixed>
+    <fixed name="limit_angle_diff_left" range="-1.15192 0.331613">  
+      <joint joint="OB_active_x_left" coef="1"/>
+      <joint joint="OA_active_x_left" coef="-1"/>
+    </fixed>
+  </tendon>
+
+  <actuator>  
+
+    <position name="act_OA_x_right" joint="OA_active_x_right" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-1.0053 0.2164"/>
+    <position name="act_OA_y_right" joint="OA_active_y_right" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-0.2443 0.2443"/>
+    <position name="act_OB_x_right" joint="OB_active_x_right" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-1.3544 0.0873"/>
+    <position name="act_OB_y_right" joint="OB_active_y_right" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-0.2443 0.2443"/>
+
+
+    <position name="act_OA_x_left" joint="OA_active_x_left" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-1.0053 0.2164"/>
+    <position name="act_OA_y_left" joint="OA_active_y_left" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-0.2443 0.2443"/>
+    <position name="act_OB_x_left" joint="OB_active_x_left" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-1.3544 0.0873"/>
+    <position name="act_OB_y_left" joint="OB_active_y_left" kp="481.4" kv="2.04" forcerange="-1.0 1.0" ctrlrange="-0.2443 0.2443"/>
+  </actuator>
+
+  <sensor>
+    <!-- 传感器：底噪估计值 0.02 -->
+    <force name="sensor_F_right" site="tip_right" noise="0.02" cutoff="4"/>
+    <torque name="sensor_T_right" site="tip_right" noise="0.001" cutoff="2"/>
+    <force name="sensor_F_left" site="tip_left" noise="0.02" cutoff="4"/>
+    <torque name="sensor_T_left" site="tip_left" noise="0.001" cutoff="2"/>
+
+    <jointpos name="pos_OA_r_x" joint="OA_active_x_right" noise="0.001"/>
+    <jointpos name="pos_OA_r_y" joint="OA_active_y_right" noise="0.001"/>
+    <jointpos name="pos_OB_r_x" joint="OB_active_x_right" noise="0.001"/>
+    <jointpos name="pos_OB_r_y" joint="OB_active_y_right" noise="0.001"/>
+
+    <jointpos name="pos_OA_l_x" joint="OA_active_x_left" noise="0.001"/>
+    <jointpos name="pos_OA_l_y" joint="OA_active_y_left" noise="0.001"/>
+    <jointpos name="pos_OB_l_x" joint="OB_active_x_left" noise="0.001"/>
+    <jointpos name="pos_OB_l_y" joint="OB_active_y_left" noise="0.001"/>
+  </sensor>
+
+</mujoco>
