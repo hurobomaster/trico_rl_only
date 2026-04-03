@@ -603,7 +603,10 @@ def main(argv):
   pbar = tqdm(total=ppo_params.num_timesteps, unit="step", unit_scale=True, smoothing=0.1)
   
   # 用于记录上一次回调时的步数，用来计算增量
-  last_step = [0] 
+  last_step = [0]
+  # 打印计数器：每50次回调打印一次精简监控信息
+  print_counter = [0]
+  print_interval = 50
 
   # 2. 重写 progress 回调函数
   def progress(num_steps, metrics):
@@ -614,27 +617,15 @@ def main(argv):
     # 更新进度条
     pbar.update(inc)
     
-    # 把关键 reward 分项显示在进度条后面，便于和 TensorBoard 对照查看。
+    # 进度条只显示少量关键指标，避免终端行过长被截断。
     postfix = {}
     metric_candidates = {
         "R": ("eval/episode_reward", "episode/sum_reward"),
         "Rot": ("eval/episode_reward_rotate", "episode/reward_rotate"),
-        "Sym": (
-            "eval/episode_penalty_symmetry",
-            "episode/penalty_symmetry",
-        ),
-        "Tip": (
-            "eval/episode_penalty_tip_penetration",
-            "episode/penalty_tip_penetration",
-        ),
-        "Delta": (
-            "eval/episode_penalty_delta_action",
-            "episode/penalty_delta_action",
-        ),
-        "Y": (
-            "eval/episode_penalty_tip_y",
-            "episode/penalty_tip_y",
-        ),
+      "Cnt": ("eval/episode_contact_any", "episode/contact_any"),
+      "Pen": ("eval/episode_sum_penalty", "episode/sum_penalty"),
+      "Tip": ("eval/episode_penalty_tip_penetration", "episode/penalty_tip_penetration"),
+      "Vel": ("eval/episode_driver_joint_vel", "episode/driver_joint_vel"),
     }
     for label, keys in metric_candidates.items():
       for key in keys:
@@ -644,14 +635,40 @@ def main(argv):
     if postfix:
       pbar.set_postfix(postfix)
 
-    # Print all reward/penalty/contact indicators for quick debugging.
-    monitor_keys = []
-    for key in sorted(metrics.keys()):
-      if any(token in key for token in ("reward", "penalty", "contact", "driver_joint")):
-        monitor_keys.append(key)
-    if monitor_keys:
-      monitor_line = " ".join([f"{k}={metrics[k]:.4f}" for k in monitor_keys])
-      tqdm.write(f"[monitor] step={num_steps} {monitor_line}")
+    # 精简单行监控：保留关键奖励/惩罚/接触，降低I/O并避免刷屏。
+    print_counter[0] += 1
+    if print_counter[0] >= print_interval:
+      print_counter[0] = 0
+      short_items = []
+
+      def _first_metric(keys):
+        for k in keys:
+          if k in metrics:
+            return metrics[k]
+        return None
+
+      val_r = _first_metric(("eval/episode_reward", "episode/sum_reward"))
+      val_rot = _first_metric(("eval/episode_reward_rotate", "episode/reward_rotate"))
+      val_cnt = _first_metric(("eval/episode_contact_any", "episode/contact_any"))
+      val_tip = _first_metric(("eval/episode_penalty_tip_penetration", "episode/penalty_tip_penetration"))
+      val_y = _first_metric(("eval/episode_penalty_tip_y", "episode/penalty_tip_y"))
+      val_vel = _first_metric(("eval/episode_driver_joint_vel", "episode/driver_joint_vel"))
+
+      if val_r is not None:
+        short_items.append(f"R={val_r:.2f}")
+      if val_rot is not None:
+        short_items.append(f"Rot={val_rot:.2f}")
+      if val_cnt is not None:
+        short_items.append(f"Cnt={val_cnt:.2f}")
+      if val_tip is not None:
+        short_items.append(f"Tip={val_tip:.3f}")
+      if val_y is not None:
+        short_items.append(f"Y={val_y:.3f}")
+      if val_vel is not None:
+        short_items.append(f"Vel={val_vel:.2f}")
+
+      if short_items:
+        tqdm.write(f"[m {num_steps:7d}] " + " | ".join(short_items))
 
     # --- 原有的日志逻辑 (保持不变) ---
     # Log to Weights & Biases

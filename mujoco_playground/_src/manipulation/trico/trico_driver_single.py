@@ -114,6 +114,9 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         # 8 joint angles + 2 contacts + 6 tip xyz + 6 relative vectors.
         self._obs_frame_size = 22
         self._tip_y_threshold = 0.01
+        # 观测维度 = 22维/帧 × 30帧历史 + 8维当前关节速度 = 668维
+        # 关节速度帮助Policy直接看到转速，而不是通过帧差推断
+        self._obs_size = self._obs_frame_size * self._obs_history_len + 8
 
     @property
     def xml_path(self) -> str:
@@ -152,8 +155,12 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         data = mjx.forward(self.mjx_model, data)
 
         obs_frame = self._get_obs_frame(data)
-        obs_history = jnp.tile(obs_frame, (self._obs_history_len,))
-        obs = obs_history
+        # 历史位置：重复填充初始帧（660维 = 22维/帧 × 30帧）
+        obs_history_pos = jnp.tile(obs_frame, (self._obs_history_len,))
+        # 初始速度：reset时设为0（8维）
+        obs_qvel_init = jnp.zeros(8, dtype=jnp.float32)
+        # 完整观测 = 位置历史 + 当前速度（668维）
+        obs = jnp.concatenate([obs_history_pos, obs_qvel_init])
         reward = jnp.array(0.0, dtype=jnp.float32)
         done = jnp.array(0.0, dtype=jnp.float32)
         metrics = {
@@ -175,7 +182,7 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         info = {
             "rng": rng,
             "last_action": jnp.zeros(self.action_size, dtype=jnp.float32),
-            "obs_history": obs_history,
+            "obs_history": obs,  # 完整观测（668维）= 位置历史 + 速度
         }
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
@@ -239,10 +246,18 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         )
 
         obs_frame = self._get_obs_frame(data)
-        obs_history = jnp.concatenate(
-            [state.info["obs_history"][self._obs_frame_size :], obs_frame]
+        # 位置历史更新：移除最老帧，添加新帧（保留660维）
+        obs_history_old = state.info["obs_history"][:660]  # 去掉末尾8维速度
+        obs_history_pos = jnp.concatenate(
+            [obs_history_old[self._obs_frame_size :], obs_frame]
         )
-        obs = obs_history
+        # 关节速度计算：(当前位置 - 前一帧位置) / 控制周期
+        # 前一帧位置是obs_history中最近的22维（观测历史的最后一帧位置）
+        qpos_act_prev = obs_history_old[(self._obs_history_len - 1) * self._obs_frame_size : (self._obs_history_len - 1) * self._obs_frame_size + 8]
+        qpos_act_curr = data.qpos[self._actuator_qpos_adr]
+        obs_qvel = (qpos_act_curr - qpos_act_prev) / self._ctrl_dt  # 速度 = 位置变化 / 时间
+        # 完整观测 = 位置历史 + 当前速度（668维）
+        obs = jnp.concatenate([obs_history_pos, obs_qvel])
         is_invalid = ~jnp.all(jnp.isfinite(obs))
         total_reward = (
             rotate_reward
@@ -290,7 +305,7 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
                 rew=reward,
             )
 
-        info = {**state.info, "last_action": action, "obs_history": obs_history}
+        info = {**state.info, "last_action": action, "obs_history": obs}
         return state.replace(
             data=data,
             obs=obs,
@@ -312,6 +327,9 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         return contact_right, contact_left
 
     def _get_obs_frame(self, data: mjx.Data) -> jax.Array:
+        """获取单帧观测（仅位置，不含速度）。速度在step/reset中单独处理。
+        返回维度：8(qpos) + 2(contact) + 3(tip_right) + 3(tip_left) + 3(rel_right) + 3(rel_left) = 22维
+        """
         qpos_act = data.qpos[self._actuator_qpos_adr]
         tip_right = data.site_xpos[self._tip_right_id]
         tip_left = data.site_xpos[self._tip_left_id]
@@ -321,12 +339,12 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         contact_right, contact_left = self._get_binary_contacts(data)
         return jnp.concatenate(
             [
-                qpos_act,
-                jnp.array([contact_right, contact_left]),
-                tip_right,
-                tip_left,
-                rel_right,
-                rel_left,
+                qpos_act,                                 # 8维：8个关节角度
+                jnp.array([contact_right, contact_left]), # 2维：二值接触状态
+                tip_right,                                # 3维：右手tip位置
+                tip_left,                                 # 3维：左手tip位置
+                rel_right,                                # 3维：相对向量(handle - tip_right)
+                rel_left,                                 # 3维：相对向量(handle - tip_left)
             ]
         )
 
