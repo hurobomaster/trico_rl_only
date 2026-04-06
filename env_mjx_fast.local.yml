@@ -139,4 +139,3 @@ dependencies:
       - wcwidth==0.6.0
       - werkzeug==3.1.7
       - zipp==3.23.0
-prefix: /home/rune/miniconda3/envs/mjx_fast

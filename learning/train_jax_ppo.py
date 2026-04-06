@@ -59,13 +59,13 @@ from tqdm import tqdm
 _ORIG_MJMODEL_FROM_XML_PATH = mujoco.MjModel.from_xml_path
 
 # 导入 Trico 真机运动学库（确保 Sim2Real 一致性）
-try:
-    from trico_control import FingerKinematics, FingerInverseSolver
-    TRICO_KINEMATICS_AVAILABLE = True
-    print("✓ Trico 真机运动学库已加载")
-except ImportError:
-    TRICO_KINEMATICS_AVAILABLE = False
-    print("✗ 警告: Trico 真机运动学库未找到，训练将使用纯仿真运动学")  
+# try:
+#     from trico_control import FingerKinematics, FingerInverseSolver
+#     TRICO_KINEMATICS_AVAILABLE = True
+#     print("✓ Trico 真机运动学库已加载")
+# except ImportError:
+#     TRICO_KINEMATICS_AVAILABLE = False
+#     print("✗ 警告: Trico 真机运动学库未找到，训练将使用纯仿真运动学")  
 
 # Ignore the info logs from brax
 
