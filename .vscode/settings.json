@@ -4,13 +4,11 @@
     "**/__pycache__": true,
     "**/.ipynb_checkpoints": true,
     "**/*.egg-info": true,
-    "logs": true,
     "wandb": true,
     "mujoco_menagerie": true,
     "checkpoints": true
   },
   "search.exclude": {
-    "logs": true,
     "wandb": true,
     "**/__pycache__": true,
     "**/.ipynb_checkpoints": true,

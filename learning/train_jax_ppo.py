@@ -53,8 +53,33 @@ from mujoco_playground.config import dm_control_suite_params
 from mujoco_playground.config import locomotion_params
 from mujoco_playground.config import manipulation_params
 import tensorboardX
-import wandb
 from tqdm import tqdm
+
+
+def _import_wandb():
+  """Imports the real wandb package even if a local `wandb/` folder exists."""
+  import importlib
+
+  repo_root = str(Path(__file__).resolve().parents[1])
+  original_sys_path = list(sys.path)
+  try:
+    wandb_mod = importlib.import_module("wandb")
+    if hasattr(wandb_mod, "init"):
+      return wandb_mod
+
+    # Local logs folder `wandb/` can shadow the pip package when running from repo root.
+    sys.modules.pop("wandb", None)
+    sys.path = [p for p in sys.path if p not in ("", repo_root)]
+    importlib.invalidate_caches()
+    wandb_mod = importlib.import_module("wandb")
+    if hasattr(wandb_mod, "init"):
+      return wandb_mod
+    raise ImportError("Imported module 'wandb' does not provide init().")
+  finally:
+    sys.path = original_sys_path
+
+
+wandb = _import_wandb()
 
 _ORIG_MJMODEL_FROM_XML_PATH = mujoco.MjModel.from_xml_path
 
@@ -148,7 +173,7 @@ _NUM_UPDATES_PER_BATCH = flags.DEFINE_integer(
     "num_updates_per_batch", 8, "Number of updates per batch"
 )
 _DISCOUNTING = flags.DEFINE_float("discounting", 0.97, "Discounting")
-_LEARNING_RATE = flags.DEFINE_float("learning_rate", 5e-4, "Learning rate")
+_LEARNINGRATE = flags.DEFINE_float("learning_rate", 5e-4, "Learning rate")
 _ENTROPY_COST = flags.DEFINE_float("entropy_cost", 5e-3, "Entropy cost")
 _NUM_ENVS = flags.DEFINE_integer("num_envs", 1024, "Number of environments")
 _NUM_EVAL_ENVS = flags.DEFINE_integer(
@@ -193,6 +218,12 @@ _LOG_TRAINING_METRICS = flags.DEFINE_boolean(
     True,
     "Whether to log training metrics and callback to progress_fn. Significantly"
     " slows down training if too frequent.",
+)
+_DETERMINISTIC_EVAL = flags.DEFINE_boolean(
+    "deterministic_eval",
+    False,
+    "Use deterministic policy during evaluation (use mean action, not stochastic)."
+    " Helps prevent high cross-episode std and allows eval to match deterministic renders.",
 )
 _TRAINING_METRICS_STEPS = flags.DEFINE_integer(
     "training_metrics_steps",
@@ -445,8 +476,8 @@ def main(argv):
     ppo_params.num_updates_per_batch = _NUM_UPDATES_PER_BATCH.value
   if _DISCOUNTING.present:
     ppo_params.discounting = _DISCOUNTING.value
-  if _LEARNING_RATE.present:
-    ppo_params.learning_rate = _LEARNING_RATE.value
+  if _LEARNINGRATE.present:
+    ppo_params.learning_rate = _LEARNINGRATE.value
   if _ENTROPY_COST.present:
     ppo_params.entropy_cost = _ENTROPY_COST.value
   if _NUM_ENVS.present:
@@ -479,6 +510,8 @@ def main(argv):
     ppo_params.run_evals = _RUN_EVALS.value
   if _LOG_TRAINING_METRICS.present:
     ppo_params.log_training_metrics = _LOG_TRAINING_METRICS.value
+  if _DETERMINISTIC_EVAL.present:
+    ppo_params.deterministic_eval = _DETERMINISTIC_EVAL.value
   if _TRAINING_METRICS_STEPS.present:
     ppo_params.training_metrics_steps = _TRAINING_METRICS_STEPS.value
 
@@ -510,11 +543,16 @@ def main(argv):
     # Convert to absolute path
     ckpt_path = epath.Path(_LOAD_CHECKPOINT_PATH.value).resolve()
     if ckpt_path.is_dir():
-      latest_ckpts = list(ckpt_path.glob("*"))
-      latest_ckpts = [ckpt for ckpt in latest_ckpts if ckpt.is_dir()]
-      latest_ckpts.sort(key=lambda x: int(x.name))
-      latest_ckpt = latest_ckpts[-1]
-      restore_checkpoint_path = latest_ckpt
+      # Support both:
+      # 1) checkpoint root dir containing numeric step subdirs
+      # 2) a single checkpoint step dir (may contain non-numeric metadata dirs)
+      child_dirs = [p for p in ckpt_path.glob("*") if p.is_dir()]
+      numeric_child_dirs = [p for p in child_dirs if p.name.isdigit()]
+      if numeric_child_dirs:
+        numeric_child_dirs.sort(key=lambda x: int(x.name))
+        restore_checkpoint_path = numeric_child_dirs[-1]
+      else:
+        restore_checkpoint_path = ckpt_path
       print(f"Restoring from:\n  {restore_checkpoint_path}")
     else:
       restore_checkpoint_path = ckpt_path
@@ -604,9 +642,9 @@ def main(argv):
   
   # 用于记录上一次回调时的步数，用来计算增量
   last_step = [0]
-  # 打印计数器：每50次回调打印一次精简监控信息
+  # 打印计数器：每5次回调打印一次精简监控信息（频率从50改为5，提高10倍输出）
   print_counter = [0]
-  print_interval = 50
+  print_interval = 5
 
   # 2. 重写 progress 回调函数
   def progress(num_steps, metrics):
@@ -859,6 +897,13 @@ def main(argv):
 
   print("Starting inference...")
 
+  # Save rendered videos near the selected checkpoint by default.
+  if restore_checkpoint_path is not None:
+    render_output_dir = Path(str(restore_checkpoint_path)) / "rollouts"
+  else:
+    render_output_dir = Path(str(logdir)) / "rollouts"
+  render_output_dir.mkdir(parents=True, exist_ok=True)
+
   # Create inference function.
   inference_fn = make_inference_fn(params, deterministic=True)
   jit_inference_fn = jax.jit(inference_fn)
@@ -921,8 +966,9 @@ def main(argv):
       frames = eval_env.render(
           traj, height=480, width=640, scene_option=scene_option
       )
-      media.write_video(f"rollout{i}.mp4", frames, fps=fps)
-      print(f"Rollout video saved as 'rollout{i}.mp4'.")
+      video_path = render_output_dir / f"rollout{i}.mp4"
+      media.write_video(str(video_path), frames, fps=fps)
+      print(f"Rollout video saved as '{video_path}'.")
   except Exception as exc:  # pylint: disable=broad-except
     print(
         "Rollout rendering failed. On headless servers, prefer "
