@@ -1,4 +1,4 @@
 
-[submodule "Trico-control"]
-	path = Trico-control
+[submodule "Trico-Control"]
+	path = Trico-Control
 	url = https://github.com/hurobomaster/Trico-Control.git
