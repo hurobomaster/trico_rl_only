@@ -33,6 +33,11 @@ from mujoco_playground.config import locomotion_params
 from mujoco_playground.config import manipulation_params
 
 
+TRICO_SUCCESS_ROTATE_THRESHOLD = 2000.0
+TRICO_SUCCESS_TIP_PENALTY_THRESHOLD = 1.0
+TRICO_SUCCESS_TIP_Y_THRESHOLD = 1.0
+
+
 _ORIG_MJMODEL_FROM_XML_PATH = mujoco.MjModel.from_xml_path
 
 
@@ -128,12 +133,23 @@ def _load_policy(env_name: str, env_cfg, checkpoint_dir: Path):
 
   train_kwargs = dict(ppo_params)
   train_kwargs.pop("network_factory", None)
+  
+  # Determine num_envs based on device count (must be divisible)
+  import jax
+  device_count = jax.device_count()
+  num_envs = max(1, device_count)  # Use device_count or 1, whichever is larger
+  
+  # For inference-only mode, use simple compatible settings
+  # The constraint is: batch_size * num_minibatches % num_envs == 0
+  batch_size = num_envs  # Make batch_size compatible with num_envs
+  num_minibatches = 1
+  
   train_kwargs.update(
       num_timesteps=0,
-      num_envs=1,
-      num_eval_envs=1,
-      batch_size=1,
-      num_minibatches=1,
+      num_envs=num_envs,
+      num_eval_envs=num_envs,
+      batch_size=batch_size,
+      num_minibatches=num_minibatches,
       num_updates_per_batch=1,
       unroll_length=1,
       log_training_metrics=False,
@@ -295,6 +311,49 @@ def _save_rollout_visualizations(
   print(f"Saved rollout raw arrays: {raw_path}")
 
 
+def _compute_success_summary(diag: dict, episode_length: int) -> dict:
+  rotate_reward = float(np.sum(diag["reward_rotate"]))
+  tip_penalty = float(np.sum(diag["penalty_tip_penetration"]))
+  tip_y_penalty = float(np.sum(diag["penalty_tip_y"]))
+  
+  # Handle case where contact_any may not be in diag
+  if "contact_any" in diag:
+    contact_any_ratio = float(np.mean(diag["contact_any"]))
+  else:
+    contact_any_ratio = 0.0
+
+  success = (
+      rotate_reward >= TRICO_SUCCESS_ROTATE_THRESHOLD
+      and tip_penalty <= TRICO_SUCCESS_TIP_PENALTY_THRESHOLD
+      and tip_y_penalty <= TRICO_SUCCESS_TIP_Y_THRESHOLD
+  )
+
+  reasons = []
+  if rotate_reward < TRICO_SUCCESS_ROTATE_THRESHOLD:
+    reasons.append(
+        f"rotate_reward<{TRICO_SUCCESS_ROTATE_THRESHOLD:.1f}"
+    )
+  if tip_penalty > TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:
+    reasons.append(f"tip_penalty>{TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:.1f}")
+  if tip_y_penalty > TRICO_SUCCESS_TIP_Y_THRESHOLD:
+    reasons.append(f"tip_y_penalty>{TRICO_SUCCESS_TIP_Y_THRESHOLD:.1f}")
+
+  return {
+      "success": bool(success),
+      "rotate_reward": rotate_reward,
+      "tip_penalty": tip_penalty,
+      "tip_y_penalty": tip_y_penalty,
+      "contact_any_ratio": contact_any_ratio,
+      "episode_length": int(episode_length),
+      "thresholds": {
+          "rotate_reward": TRICO_SUCCESS_ROTATE_THRESHOLD,
+          "tip_penalty": TRICO_SUCCESS_TIP_PENALTY_THRESHOLD,
+          "tip_y_penalty": TRICO_SUCCESS_TIP_Y_THRESHOLD,
+      },
+      "reasons": reasons,
+  }
+
+
 def _render_rollout(
     env,
     make_inference_fn,
@@ -370,6 +429,9 @@ def _render_rollout(
         diag = {
             "reward": state.reward,
             "reward_rotate": state.metrics["reward_rotate"],
+          "contact_any": state.metrics["contact_any"],
+          "contact_right": state.metrics["contact_right"],
+          "contact_left": state.metrics["contact_left"],
             "penalty_tip_penetration": state.metrics["penalty_tip_penetration"],
             "penalty_delta_action": state.metrics["penalty_delta_action"],
             "penalty_tip_y": tip_y_penalty,
@@ -425,6 +487,15 @@ def _render_rollout(
   return videos, diagnostics
 
 
+def _save_success_summary(checkpoint_dir: Path, stem: str, summary: dict) -> None:
+  vis_dir = checkpoint_dir / "vis"
+  vis_dir.mkdir(exist_ok=True)
+  summary_path = vis_dir / f"{stem}_success.json"
+  with open(summary_path, "w", encoding="utf-8") as fp:
+    json.dump(summary, fp, indent=2, ensure_ascii=False)
+  print(f"Saved success summary: {summary_path}")
+
+
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("--env_name", required=True)
@@ -434,7 +505,7 @@ def main():
       help="Experiment dir, checkpoints dir, or a single numeric checkpoint dir.",
   )
   parser.add_argument("--trico_driver_xml", default=None)
-  parser.add_argument("--episode_length", type=int, default=500)
+  parser.add_argument("--episode_length", type=int, default=1000)
   parser.add_argument("--num_videos", type=int, default=1)
   parser.add_argument("--render_every", type=int, default=2)
   parser.add_argument("--width", type=int, default=640)
@@ -458,6 +529,7 @@ def main():
   )
 
   print(f"Rendering {len(checkpoint_dirs)} checkpoint(s) from: {checkpoints_root}")
+  all_successes = []
   for checkpoint_dir in checkpoint_dirs:
     print(f"Loading checkpoint: {checkpoint_dir}")
     env, make_inference_fn, params = _load_policy(
@@ -485,6 +557,21 @@ def main():
           diagnostics[0],
           fps=videos[0][1],
       )
+      success_summary = _compute_success_summary(
+        diagnostics[0], args.episode_length
+      )
+      _save_success_summary(
+        checkpoint_dir, Path(args.output_name).stem, success_summary
+      )
+      all_successes.append(success_summary["success"])
+      print(
+        "Success verdict: "
+        f"{success_summary['success']} | "
+        f"rotate_reward={success_summary['rotate_reward']:.2f} | "
+        f"tip_penalty={success_summary['tip_penalty']:.2f} | "
+        f"tip_y_penalty={success_summary['tip_y_penalty']:.2f} | "
+        f"contact_ratio={success_summary['contact_any_ratio']:.3f}"
+      )
       continue
 
     stem = Path(args.output_name).stem
@@ -498,6 +585,23 @@ def main():
           f"{stem}{idx}",
           diag,
           fps=fps,
+      )
+      success_summary = _compute_success_summary(diag, args.episode_length)
+      _save_success_summary(checkpoint_dir, f"{stem}{idx}", success_summary)
+      all_successes.append(success_summary["success"])
+      print(
+        "Success verdict: "
+        f"{success_summary['success']} | "
+        f"rotate_reward={success_summary['rotate_reward']:.2f} | "
+        f"tip_penalty={success_summary['tip_penalty']:.2f} | "
+        f"tip_y_penalty={success_summary['tip_y_penalty']:.2f} | "
+        f"contact_ratio={success_summary['contact_any_ratio']:.3f}"
+      )
+
+    if all_successes:
+      print(
+        f"Overall success rate: {sum(all_successes)}/{len(all_successes)} "
+        f"({sum(all_successes) / len(all_successes):.1%})"
       )
 
 

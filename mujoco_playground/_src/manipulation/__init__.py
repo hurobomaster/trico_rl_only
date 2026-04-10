@@ -34,6 +34,7 @@ from mujoco_playground._src.manipulation.trico import trico_driver as trico_driv
 from mujoco_playground._src.manipulation.trico import (
     trico_driver_single as trico_driver_single_env,
 )
+from mujoco_playground._src.manipulation.trico import randomize as trico_randomize
 
 _envs = {
     "AlohaHandOver": aloha_handover.HandOver,
@@ -71,6 +72,8 @@ _randomizer = {
     "LeapCubeRotateZAxis": leap_rotate_z.domain_randomize,
     "LeapCubeReorient": leap_cube_reorient.domain_randomize,
     "AeroCubeRotateZAxis": aero_hand_rotate_z.domain_randomize,
+    "TricoDriver": trico_randomize.domain_randomize,
+    "TricoDriverSingle": trico_randomize.domain_randomize,
 }
 
 

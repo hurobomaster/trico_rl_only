@@ -358,8 +358,6 @@ config.ctrl_dt = 0.01   # 100Hz（10ms）
 config.sim_dt = 0.001   # 保持 1ms（保持物理准确性）
 config.episode_length = 1000  # 1000 * 10ms = 10 秒
 
-# 或者改为 25Hz 控制（更低延迟）
-config.ctrl_dt = 0.04   # 25Hz（40ms）
 ```
 
 ### 4. 修改训练超参数

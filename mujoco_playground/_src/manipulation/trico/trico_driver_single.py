@@ -34,7 +34,7 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         config.ctrl_dt = 0.02
         config.sim_dt = 0.001
         if "episode_length" not in config:
-            config.episode_length = 500
+            config.episode_length = 1000
         if "action_repeat" not in config:
             config.action_repeat = 1
         if "rotate_reward_scale" not in config:

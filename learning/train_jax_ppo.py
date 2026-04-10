@@ -708,10 +708,43 @@ def main(argv):
       if short_items:
         tqdm.write(f"[m {num_steps:7d}] " + " | ".join(short_items))
 
+    # --- 计算 success ratio (Trico 环境特定逻辑) ---
+    metrics_to_log = dict(metrics)
+    if _ENV_NAME.value in {"TricoDriver", "TricoDriverSingle"}:
+      # 从eval metrics中提取必要的指标，计算success ratio
+      def _get_eval_metric(keys):
+        """Helper to get the first matching eval metric from the keys tuple."""
+        for key in keys:
+          if key in metrics:
+            return metrics[key]
+        return None
+
+      rotate_reward = _get_eval_metric(("eval/episode_reward_rotate", "episode/reward_rotate"))
+      tip_penalty = _get_eval_metric(("eval/episode_penalty_tip_penetration", "episode/penalty_tip_penetration"))
+      tip_y_penalty = _get_eval_metric(("eval/episode_penalty_tip_y", "episode/penalty_tip_y"))
+
+      # 如果有完整的metrics数据，计算success判决
+      if rotate_reward is not None and tip_penalty is not None and tip_y_penalty is not None:
+        # 使用与render_checkpoint_rollouts.py相同的阈值
+        TRICO_SUCCESS_ROTATE_THRESHOLD = 2000.0
+        TRICO_SUCCESS_TIP_PENALTY_THRESHOLD = 1.0
+        TRICO_SUCCESS_TIP_Y_THRESHOLD = 1.0
+
+        # 判决是否本次evaluation成功
+        is_success = (
+            float(rotate_reward) >= TRICO_SUCCESS_ROTATE_THRESHOLD
+            and float(tip_penalty) <= TRICO_SUCCESS_TIP_PENALTY_THRESHOLD
+            and float(tip_y_penalty) <= TRICO_SUCCESS_TIP_Y_THRESHOLD
+        )
+        # 将成功状态添加到metrics中（供wandb记录）
+        # 如果想要success_ratio，需要在这里手动追踪成功数
+        # 这里我们记录当前evaluation的成功与否
+        metrics_to_log["eval/success_rate"] = float(is_success)
+
     # --- 原有的日志逻辑 (保持不变) ---
     # Log to Weights & Biases
     if _USE_WANDB.value and not _PLAY_ONLY.value:
-      wandb.log(metrics, step=num_steps)
+      wandb.log(metrics_to_log, step=num_steps)
 
     # Log to TensorBoard
     if _USE_TB.value and not _PLAY_ONLY.value:
