@@ -146,6 +146,17 @@ _USE_TB = flags.DEFINE_boolean(
 _DOMAIN_RANDOMIZATION = flags.DEFINE_boolean(
     "domain_randomization", False, "Use domain randomization"
 )
+_DR_PHASE = flags.DEFINE_integer(
+  "dr_phase",
+  1,
+  "Domain randomization phase selector. 1=near-DR, 2=stronger DR.",
+)
+_DR_MODE = flags.DEFINE_enum(
+  "dr_mode",
+  "near-dr",
+  ["no-dr", "near-dr", "strong-dr", "strong-dr-v2"],
+  "Domain randomization mode: no-dr, near-dr, strong-dr, or strong-dr-v2.",
+)
 _SEED = flags.DEFINE_integer("seed", 1, "Random seed")
 _NUM_TIMESTEPS = flags.DEFINE_integer(
     "num_timesteps", 1_000_000, "Number of timesteps"
@@ -411,10 +422,6 @@ def _build_experiment_name(timestamp: str, experiment_label: str) -> str:
     suffix = _sanitize_name_component(_SUFFIX.value)
     if suffix:
       name_parts.append(suffix)
-  if _ENV_NAME.value in {"TricoDriver", "TricoDriverSingle"} and _TRICO_DRIVER_XML.value:
-    xml_stem = _sanitize_name_component(Path(_TRICO_DRIVER_XML.value).stem)
-    if xml_stem:
-      name_parts.append(xml_stem)
   return "-".join(name_parts)
 
 
@@ -428,9 +435,33 @@ def main(argv):
   # Load environment configuration
   env_cfg = registry.get_default_config(_ENV_NAME.value)
   env_cfg["impl"] = _IMPL.value
+
+  # Preferred control is --dr_mode. Legacy flags are still supported.
+  dr_mode = _DR_MODE.value
+  if _DOMAIN_RANDOMIZATION.value:
+    if _DR_PHASE.value == 1:
+      dr_mode = "near-dr"
+    elif _DR_PHASE.value == 2:
+      dr_mode = "strong-dr"
+    else:
+      raise ValueError(
+          f"Unsupported --dr_phase={_DR_PHASE.value}. Use 1 or 2."
+      )
+    print(
+        "Info: using legacy flags --domain_randomization/--dr_phase. "
+        "Consider switching to --dr_mode=no-dr|near-dr|strong-dr|strong-dr-v2."
+    )
   if _ENV_NAME.value in {"TricoDriver", "TricoDriverSingle"}:
     if _TRICO_ROTATE_REWARD_SCALE.value is not None:
       env_cfg.rotate_reward_scale = _TRICO_ROTATE_REWARD_SCALE.value
+    if dr_mode == "strong-dr-v2" and _ENV_NAME.value == "TricoDriverSingle":
+      # Aggressive deployment-oriented robustness: random action delay in [0, 5].
+      env_cfg.action_min_delay = 0
+      env_cfg.action_max_delay = 5
+      env_cfg.action_history_len = 6
+      # Observation and action noise for additional robustness
+      env_cfg.obs_noise_std = 0.02
+      env_cfg.action_noise_std = 0.02
     if _TRICO_SYMMETRY_PENALTY_SCALE.value is not None:
       env_cfg.symmetry_penalty_scale = _TRICO_SYMMETRY_PENALTY_SCALE.value
     if _TRICO_TIP_PENALTY_SCALE.value is not None:
@@ -518,7 +549,7 @@ def main(argv):
   print(f"Environment Config:\n{env_cfg}")
   print(f"PPO Training Parameters:\n{ppo_params}")
   now = datetime.datetime.now()
-  timestamp = now.strftime("%Y%m%d-%H%M%S")
+  timestamp = now.strftime("%m%d-%H%M")
   experiment_label = _get_experiment_label()
   exp_name = _build_experiment_name(timestamp, experiment_label)
   print(f"Experiment name: {exp_name}")
@@ -586,10 +617,36 @@ def main(argv):
   else:
     network_factory = network_fn
 
-  if _DOMAIN_RANDOMIZATION.value:
-    training_params["randomization_fn"] = registry.get_domain_randomizer(
-        _ENV_NAME.value
-    )
+  if dr_mode != "no-dr":
+    randomization_fn = registry.get_domain_randomizer(_ENV_NAME.value)
+    selected_mode = None
+
+    # Trico supports explicit DR phases. Other envs keep their default randomizer.
+    if _ENV_NAME.value in ("TricoDriver", "TricoDriverSingle"):
+      from mujoco_playground._src.manipulation.trico import randomize as trico_randomize
+
+      if dr_mode == "near-dr":
+        randomization_fn = trico_randomize.domain_randomize
+      elif dr_mode == "strong-dr":
+        randomization_fn = trico_randomize.domain_randomize_phase2
+      else:
+        randomization_fn = trico_randomize.domain_randomize_phase3
+      selected_mode = dr_mode
+    elif dr_mode in ("strong-dr", "strong-dr-v2"):
+      print(
+          "Warning: --dr_mode=strong-dr/strong-dr-v2 is currently only "
+          "implemented for TricoDriver/TricoDriverSingle. Falling back "
+          "to env default DR."
+      )
+
+    training_params["randomization_fn"] = randomization_fn
+    if selected_mode is None:
+      print(f"Domain randomization enabled: env={_ENV_NAME.value}")
+    else:
+      print(
+          "Domain randomization enabled: "
+          f"env={_ENV_NAME.value}, dr_mode={selected_mode}"
+      )
 
   if _VISION.value:
     env = wrapper.wrap_for_brax_training(

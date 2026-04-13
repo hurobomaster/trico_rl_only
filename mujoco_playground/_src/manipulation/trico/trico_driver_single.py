@@ -61,6 +61,16 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
             config.reach_reward_scale = 0.5
         if "reach_distance_scale" not in config:
             config.reach_distance_scale = 20.0
+        if "action_min_delay" not in config:
+            config.action_min_delay = 0
+        if "action_max_delay" not in config:
+            config.action_max_delay = 0
+        if "action_history_len" not in config:
+            config.action_history_len = 6
+        if "obs_noise_std" not in config:
+            config.obs_noise_std = 0.0
+        if "action_noise_std" not in config:
+            config.action_noise_std = 0.0
 
         super().__init__(config=config)
 
@@ -110,6 +120,21 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         self._contact_reward_scale = float(config.contact_reward_scale)
         self._reach_reward_scale = float(config.reach_reward_scale)
         self._reach_distance_scale = float(config.reach_distance_scale)
+        self._action_min_delay = int(config.action_min_delay)
+        self._action_max_delay = int(config.action_max_delay)
+        self._action_history_len = int(config.action_history_len)
+        self._obs_noise_std = float(config.obs_noise_std)
+        self._action_noise_std = float(config.action_noise_std)
+        if self._action_history_len <= 0:
+            raise ValueError("action_history_len must be positive")
+        if self._action_min_delay < 0:
+            raise ValueError("action_min_delay must be >= 0")
+        if self._action_max_delay < self._action_min_delay:
+            raise ValueError("action_max_delay must be >= action_min_delay")
+        if self._action_max_delay >= self._action_history_len:
+            raise ValueError(
+                "action_max_delay must be smaller than action_history_len"
+            )
         self._single_action_size = 4
         # 8 joint angles + 2 contacts + 6 tip xyz + 6 relative vectors.
         self._obs_frame_size = 22
@@ -182,12 +207,36 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         info = {
             "rng": rng,
             "last_action": jnp.zeros(self.action_size, dtype=jnp.float32),
+            "action_history": jnp.zeros(
+                self._action_history_len * self.action_size, dtype=jnp.float32
+            ),
             "obs_history": obs,  # 完整观测（668维）= 位置历史 + 速度
         }
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        mirrored_action = jnp.concatenate([action, action])
+        action_history = jnp.roll(state.info["action_history"], self.action_size).at[
+            : self.action_size
+        ].set(action)
+        rng, delay_key = jax.random.split(state.info["rng"])
+        delay_idx = jax.random.randint(
+            delay_key,
+            shape=(),
+            minval=self._action_min_delay,
+            maxval=self._action_max_delay + 1,
+        )
+        action_w_delay = action_history.reshape(
+            (self._action_history_len, self.action_size)
+        )[delay_idx]
+        
+        # Apply action noise (Gaussian perturbation)
+        rng, action_noise_key = jax.random.split(rng)
+        action_noise = jax.random.normal(
+            action_noise_key, shape=action_w_delay.shape
+        ) * self._action_noise_std
+        action_w_delay = action_w_delay + action_noise
+
+        mirrored_action = jnp.concatenate([action_w_delay, action_w_delay])
         ctrl_center = (self._ctrlrange[:, 0] + self._ctrlrange[:, 1]) * 0.5
         ctrl_half = (self._ctrlrange[:, 1] - self._ctrlrange[:, 0]) * 0.5
         motor_targets = ctrl_center + mirrored_action * ctrl_half
@@ -229,7 +278,7 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         penetration_penalty = self._penetration_penalty_scale * jnp.sum(
             tip_penetration
         )
-        delta_action = action - state.info["last_action"]
+        delta_action = action_w_delay - state.info["last_action"]
         delta_action_penalty = self._delta_action_penalty_scale * jnp.mean(
             jnp.square(delta_action)
         )
@@ -258,6 +307,13 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
         obs_qvel = (qpos_act_curr - qpos_act_prev) / self._ctrl_dt  # 速度 = 位置变化 / 时间
         # 完整观测 = 位置历史 + 当前速度（668维）
         obs = jnp.concatenate([obs_history_pos, obs_qvel])
+        
+        # Apply observation noise (Gaussian perturbation)
+        if self._obs_noise_std > 0.0:
+            rng, obs_noise_key = jax.random.split(rng)
+            obs_noise = jax.random.normal(obs_noise_key, shape=obs.shape) * self._obs_noise_std
+            obs = obs + obs_noise
+        
         is_invalid = ~jnp.all(jnp.isfinite(obs))
         total_reward = (
             rotate_reward
@@ -305,7 +361,13 @@ class TricoDriverSingleEnv(mjx_env.MjxEnv):
                 rew=reward,
             )
 
-        info = {**state.info, "last_action": action, "obs_history": obs}
+        info = {
+            **state.info,
+            "rng": rng,
+            "last_action": action_w_delay,
+            "action_history": action_history,
+            "obs_history": obs,
+        }
         return state.replace(
             data=data,
             obs=obs,
@@ -377,4 +439,7 @@ def default_config() -> config_dict.ConfigDict:
         contact_reward_scale=0.25,
         reach_reward_scale=0.5,
         reach_distance_scale=20.0,
+        action_min_delay=0,
+        action_max_delay=0,
+        action_history_len=6,
     )

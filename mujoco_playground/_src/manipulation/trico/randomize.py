@@ -14,7 +14,7 @@
 # ==============================================================================
 """Domain randomization for Trico screwdriver rotation task."""
 
-from typing import Tuple
+from typing import Any, NamedTuple, Tuple, cast
 
 import jax
 import jax.numpy as jp
@@ -23,6 +23,81 @@ import numpy as np
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src.manipulation.trico import trico_driver_single as trico_env
+
+
+class DrPhaseConfig(NamedTuple):
+  """Domain randomization ranges for a training phase."""
+
+  actuator_min: float
+  actuator_max: float
+  damping_min: float
+  damping_max: float
+  armature_min: float
+  armature_max: float
+  driver_mass_min: float
+  driver_mass_max: float
+  driver_friction_min: float
+  driver_friction_max: float
+  qpos0_noise_abs: float
+  fingertip_friction_min: float
+  fingertip_friction_max: float
+  obs_noise_std: float
+  action_noise_std: float
+
+
+PHASE1_CONFIG = DrPhaseConfig(
+    actuator_min=0.95,
+    actuator_max=1.05,
+    damping_min=0.95,
+    damping_max=1.05,
+    armature_min=0.95,
+    armature_max=1.05,
+    driver_mass_min=0.95,
+    driver_mass_max=1.05,
+    driver_friction_min=0.9,
+    driver_friction_max=1.1,
+    qpos0_noise_abs=0.02,
+    fingertip_friction_min=0.9,
+    fingertip_friction_max=1.1,
+    obs_noise_std=0.0,
+    action_noise_std=0.0,
+)
+
+PHASE2_CONFIG = DrPhaseConfig(
+    actuator_min=0.9,
+    actuator_max=1.1,
+    damping_min=0.9,
+    damping_max=1.1,
+    armature_min=0.9,
+    armature_max=1.1,
+    driver_mass_min=0.9,
+    driver_mass_max=1.1,
+    driver_friction_min=0.8,
+    driver_friction_max=1.2,
+    qpos0_noise_abs=0.03,
+    fingertip_friction_min=0.85,
+    fingertip_friction_max=1.15,
+    obs_noise_std=0.0,
+    action_noise_std=0.0,
+)
+
+PHASE3_CONFIG = DrPhaseConfig(
+    actuator_min=0.8,
+    actuator_max=1.2,
+    damping_min=0.8,
+    damping_max=1.2,
+    armature_min=0.8,
+    armature_max=1.2,
+    driver_mass_min=0.8,
+    driver_mass_max=1.2,
+    driver_friction_min=0.6,
+    driver_friction_max=1.4,
+    qpos0_noise_abs=0.05,
+    fingertip_friction_min=0.75,
+    fingertip_friction_max=1.25,
+    obs_noise_std=0.02,
+    action_noise_std=0.02,
+)
 
 
 def _get_all_hand_body_ids(mj_model) -> np.ndarray:
@@ -48,13 +123,14 @@ def _get_all_hand_body_ids(mj_model) -> np.ndarray:
   return np.array(hand_body_ids, dtype=np.int32)
 
 
-def domain_randomize(
-    model: mjx.Model, rng: jax.Array
-) -> Tuple[mjx.Model, jax.tree_util.PyTreeDef]:
+def _domain_randomize_with_config(
+    model: mjx.Model,
+    rng: jax.Array,
+    cfg: DrPhaseConfig,
+) -> Tuple[mjx.Model, Any]:
   """Domain randomization for Trico environments.
 
-  Applies physics randomization with carefully chosen ranges based on real
-  hardware variation. This is Phase 1 (conservative) randomization.
+  Applies physics randomization with ranges provided in cfg.
 
   Args:
     model: MJX model to randomize
@@ -96,47 +172,62 @@ def domain_randomize(
     rng, key = jax.random.split(rng)
 
     # ========================================================================
-    # Phase 1: Conservative Domain Randomization
+    # Domain Randomization
     # ========================================================================
 
-    # 1. Actuator gain (joint stiffness): scale by ~U(0.95, 1.05)
+    # 1. Actuator gain (joint stiffness)
     #    This captures manufacturing variation in servo strengths
     rng, key = jax.random.split(rng)
-    kp_scale = jax.random.uniform(key, (model.nu,), minval=0.95, maxval=1.05)
+    kp_scale = jax.random.uniform(
+      key,
+      (model.nu,),
+      minval=cfg.actuator_min,
+      maxval=cfg.actuator_max,
+    )
     actuator_gainprm = model.actuator_gainprm.at[:, 0].set(
         model.actuator_gainprm[:, 0] * kp_scale
     )
     actuator_biasprm = model.actuator_biasprm.at[:, 1].set(-actuator_gainprm[:, 0])
 
-    # 2. Dof damping (joint friction): scale by ~U(0.95, 1.05)
+    # 2. Dof damping (joint friction)
     #    This captures servo damping variation
     rng, key = jax.random.split(rng)
     damping_scale = jax.random.uniform(
-        key, shape=(len(hand_qids),), minval=0.95, maxval=1.05
+      key,
+      shape=(len(hand_qids),),
+      minval=cfg.damping_min,
+      maxval=cfg.damping_max,
     )
     dof_damping = model.dof_damping.at[hand_qids].set(
         model.dof_damping[hand_qids] * damping_scale
     )
 
-    # 3. Dof armature (joint inertia): scale by ~U(0.95, 1.05)
+    # 3. Dof armature (joint inertia)
     #    This captures motor inertia and gear ratio variation
     rng, key = jax.random.split(rng)
     armature_scale = jax.random.uniform(
-        key, shape=(len(hand_qids),), minval=0.95, maxval=1.05
+      key,
+      shape=(len(hand_qids),),
+      minval=cfg.armature_min,
+      maxval=cfg.armature_max,
     )
     dof_armature = model.dof_armature.at[hand_qids].set(
         model.dof_armature[hand_qids] * armature_scale
     )
 
-    # 4. Driver (screwdriver) mass: scale by ~U(0.95, 1.05)
+    # 4. Driver (screwdriver) mass
     #    Captures tool weight variation
     rng, key = jax.random.split(rng)
-    driver_mass_scale = jax.random.uniform(key, minval=0.95, maxval=1.05)
+    driver_mass_scale = jax.random.uniform(
+      key,
+      minval=cfg.driver_mass_min,
+      maxval=cfg.driver_mass_max,
+    )
     body_mass = model.body_mass.at[driver_body_id].set(
         model.body_mass[driver_body_id] * driver_mass_scale
     )
 
-    # 5. Driver friction: scale by ~U(0.9, 1.1)
+    # 5. Driver friction
     #    This is the contact friction between tool and hand
     #    Most important for grasp stability
     rng, key = jax.random.split(rng)
@@ -144,7 +235,11 @@ def domain_randomize(
     # For now, we'll randomize some geom friction that likely contacts the driver
     try:
       driver_geom_id = mj_model.geom("driver_handle_collision").id
-      driver_friction = jax.random.uniform(key, minval=0.9, maxval=1.1)
+      driver_friction = jax.random.uniform(
+          key,
+          minval=cfg.driver_friction_min,
+          maxval=cfg.driver_friction_max,
+      )
       geom_friction = model.geom_friction.at[driver_geom_id, 0].set(
           model.geom_friction[driver_geom_id, 0] * driver_friction
       )
@@ -152,15 +247,18 @@ def domain_randomize(
       # If driver geom doesn't exist, just don't randomize
       geom_friction = model.geom_friction
 
-    # 6. Hand joint qpos0 (home position): add noise ~U(-0.02, 0.02)
+    # 6. Hand joint qpos0 (home position)
     #    Captures calibration / zero-point offset variation
     rng, key = jax.random.split(rng)
     qpos0_noise = jax.random.uniform(
-      key, shape=(len(hand_qids),), minval=-0.02, maxval=0.02
+        key,
+        shape=(len(hand_qids),),
+        minval=-cfg.qpos0_noise_abs,
+        maxval=cfg.qpos0_noise_abs,
     )
     qpos0 = model.qpos0.at[hand_qids].add(qpos0_noise)
 
-    # 7. Hand finger surface friction: scale by ~U(0.9, 1.1)
+    # 7. Hand finger surface friction
     #    This affects grip quality on the tool
     rng, key = jax.random.split(rng)
     try:
@@ -178,7 +276,10 @@ def domain_randomize(
 
       if fingertip_geom_ids:
         fingertip_friction_scale = jax.random.uniform(
-          key, shape=(len(fingertip_geom_ids),), minval=0.9, maxval=1.1
+            key,
+            shape=(len(fingertip_geom_ids),),
+            minval=cfg.fingertip_friction_min,
+            maxval=cfg.fingertip_friction_max,
         )
         for i, geom_id in enumerate(fingertip_geom_ids):
           geom_friction = geom_friction.at[geom_id, 0].set(
@@ -223,7 +324,7 @@ def domain_randomize(
   })
 
   # Apply all randomizations to the model
-  model = model.tree_replace({
+  model = cast(mjx.Model, model.tree_replace({
       "geom_friction": geom_friction,
       "body_mass": body_mass,
       "dof_damping": dof_damping,
@@ -231,6 +332,27 @@ def domain_randomize(
       "qpos0": qpos0,
       "actuator_gainprm": actuator_gainprm,
       "actuator_biasprm": actuator_biasprm,
-  })
+  }))
 
   return model, in_axes
+
+
+def domain_randomize(
+  model: mjx.Model, rng: jax.Array
+) -> Tuple[mjx.Model, Any]:
+  """Phase 1 (near-DR) randomization entrypoint."""
+  return _domain_randomize_with_config(model, rng, PHASE1_CONFIG)
+
+
+def domain_randomize_phase2(
+  model: mjx.Model, rng: jax.Array
+) -> Tuple[mjx.Model, Any]:
+  """Phase 2 (stronger DR) randomization entrypoint."""
+  return _domain_randomize_with_config(model, rng, PHASE2_CONFIG)
+
+
+def domain_randomize_phase3(
+  model: mjx.Model, rng: jax.Array
+) -> Tuple[mjx.Model, Any]:
+  """Phase 3 (strong-dr-v2, aggressive DR) randomization entrypoint."""
+  return _domain_randomize_with_config(model, rng, PHASE3_CONFIG)

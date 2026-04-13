@@ -1,0 +1,19 @@
+{
+    "action_repeat": 1,
+    "allowed_tip_penetration": 0.005,
+    "contact_force_threshold": 0.1,
+    "contact_reward_scale": 0.25,
+    "ctrl_dt": 0.02,
+    "delta_action_penalty_scale": 0.0,
+    "episode_length": 500,
+    "hand_init_noise_scale": 0.02,
+    "impl": "jax",
+    "obs_history_len": 30,
+    "reach_distance_scale": 20.0,
+    "reach_reward_scale": 0.5,
+    "rotate_reward_scale": 2.5,
+    "sim_dt": 0.001,
+    "symmetry_penalty_scale": 0.0,
+    "tip_penetration_penalty_scale": 150.0,
+    "tip_y_penalty_scale": 3.0
+}
