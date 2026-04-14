@@ -4,6 +4,10 @@
     "**/__pycache__": true,
     "**/.ipynb_checkpoints": true,
     "**/*.egg-info": true,
+    "**/.gitattributes": true,
+    "**/.gitignore": true,
+    "**/.gitmodules": true,
+    "**/.pre-commit-config.yaml": true,
     "wandb": true,
     "mujoco_menagerie": true,
     "checkpoints": true

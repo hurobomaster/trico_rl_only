@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 # 导入映射函数
-from mujoco_playground._src.inference.sim_real_mapping import (
+from mujoco_playground._src.convert.sim_real_mapping import (
     servo_angles_to_sim_obs,
     sim_action_to_servo_angles,
     parse_actuator_ctrlrange_from_xml,
