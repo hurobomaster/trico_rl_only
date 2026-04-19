@@ -34,6 +34,9 @@ from mujoco_playground._src.manipulation.trico import trico_driver as trico_driv
 from mujoco_playground._src.manipulation.trico import (
     trico_driver_single as trico_driver_single_env,
 )
+from mujoco_playground._src.manipulation.trico import (
+  trico_driver_single_reach as trico_driver_single_reach_env,
+)
 from mujoco_playground._src.manipulation.trico import randomize as trico_randomize
 
 _envs = {
@@ -50,6 +53,9 @@ _envs = {
     "Trico": trico_env.TricoEnv,
     "TricoDriver": trico_driver_env.TricoDriverEnv,
     "TricoDriverSingle": trico_driver_single_env.TricoDriverSingleEnv,
+    "TricoDriverSingleReach": (
+      trico_driver_single_reach_env.TricoDriverSingleReachEnv
+    ),
 }
 
 _cfgs = {
@@ -66,6 +72,7 @@ _cfgs = {
     "Trico": trico_env.default_config,
     "TricoDriver": trico_driver_env.default_config,
     "TricoDriverSingle": trico_driver_single_env.default_config,
+    "TricoDriverSingleReach": trico_driver_single_reach_env.default_config,
 }
 
 _randomizer = {
@@ -74,6 +81,7 @@ _randomizer = {
     "AeroCubeRotateZAxis": aero_hand_rotate_z.domain_randomize,
     "TricoDriver": trico_randomize.domain_randomize,
     "TricoDriverSingle": trico_randomize.domain_randomize,
+    "TricoDriverSingleReach": trico_randomize.domain_randomize,
 }
 
 
@@ -125,7 +133,12 @@ def load(
   Returns:
       An instance of the environment.
   """
-  if env_name not in {"Trico", "TricoDriver", "TricoDriverSingle"}:
+  if env_name not in {
+      "Trico",
+      "TricoDriver",
+      "TricoDriverSingle",
+      "TricoDriverSingleReach",
+  }:
     mjx_env.ensure_menagerie_exists()
   if env_name not in _envs:
     raise ValueError(

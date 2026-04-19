@@ -65,7 +65,11 @@ def brax_ppo_config(
     rl_config.network_factory.policy_hidden_layer_sizes = (256, 256, 256)
     rl_config.network_factory.value_hidden_layer_sizes = (256, 256, 256, 256)
 
-  elif env_name in {"TricoDriver", "TricoDriverSingle"}:
+  elif env_name in {
+      "TricoDriver",
+      "TricoDriverSingle",
+      "TricoDriverSingleReach",
+  }:
     rl_config.episode_length = 1000
     rl_config.action_repeat = 1
     rl_config.num_timesteps = 150_000_000

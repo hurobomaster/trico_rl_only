@@ -140,6 +140,11 @@ _USE_WANDB = flags.DEFINE_boolean(
   True,
     "Use Weights & Biases for logging (ignored in play-only mode)",
 )
+_WANDB_PROJECT = flags.DEFINE_string(
+  "wandb_project",
+  "mjxrl",
+  "Weights & Biases project name.",
+)
 _USE_TB = flags.DEFINE_boolean(
     "use_tb", True, "Use TensorBoard for logging (ignored in play-only mode)"
 )
@@ -451,10 +456,17 @@ def main(argv):
         "Info: using legacy flags --domain_randomization/--dr_phase. "
         "Consider switching to --dr_mode=no-dr|near-dr|strong-dr|strong-dr-v2."
     )
-  if _ENV_NAME.value in {"TricoDriver", "TricoDriverSingle"}:
+  if _ENV_NAME.value in {
+      "TricoDriver",
+      "TricoDriverSingle",
+      "TricoDriverSingleReach",
+  }:
     if _TRICO_ROTATE_REWARD_SCALE.value is not None:
       env_cfg.rotate_reward_scale = _TRICO_ROTATE_REWARD_SCALE.value
-    if dr_mode == "strong-dr-v2" and _ENV_NAME.value == "TricoDriverSingle":
+    if dr_mode == "strong-dr-v2" and _ENV_NAME.value in {
+      "TricoDriverSingle",
+      "TricoDriverSingleReach",
+    }:
       # Aggressive deployment-oriented robustness: random action delay in [0, 5].
       env_cfg.action_min_delay = 0
       env_cfg.action_max_delay = 5
@@ -561,7 +573,7 @@ def main(argv):
 
   # Initialize Weights & Biases if required
   if _USE_WANDB.value and not _PLAY_ONLY.value:
-    wandb.init(project="mjxrl", name=exp_name)
+    wandb.init(project=_WANDB_PROJECT.value, name=exp_name)
     wandb.config.update(env_cfg.to_dict())
     wandb.config.update({"env_name": _ENV_NAME.value})
 
@@ -622,7 +634,11 @@ def main(argv):
     selected_mode = None
 
     # Trico supports explicit DR phases. Other envs keep their default randomizer.
-    if _ENV_NAME.value in ("TricoDriver", "TricoDriverSingle"):
+    if _ENV_NAME.value in (
+      "TricoDriver",
+      "TricoDriverSingle",
+      "TricoDriverSingleReach",
+    ):
       from mujoco_playground._src.manipulation.trico import randomize as trico_randomize
 
       if dr_mode == "near-dr":
