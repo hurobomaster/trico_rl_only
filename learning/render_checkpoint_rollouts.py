@@ -312,37 +312,51 @@ def _save_rollout_visualizations(
 
 
 def _compute_success_summary(diag: dict, episode_length: int) -> dict:
-  rotate_reward = float(np.sum(diag["reward_rotate"]))
-  tip_penalty = float(np.sum(diag["penalty_tip_penetration"]))
-  tip_y_penalty = float(np.sum(diag["penalty_tip_y"]))
-  
-  # Handle case where contact_any may not be in diag
+  if "reward_rotate" in diag:
+    primary_reward = float(np.sum(diag["reward_rotate"]))
+    primary_name = "rotate_reward"
+  elif "reward_reach" in diag:
+    primary_reward = float(np.sum(diag["reward_reach"]))
+    primary_name = "reach_reward"
+  else:
+    primary_reward = float(np.sum(diag["reward"]))
+    primary_name = "reward"
+
+  tip_penalty = float(np.sum(diag.get("penalty_tip_penetration", 0.0)))
+  tip_y_penalty = float(np.sum(diag.get("penalty_tip_y", 0.0)))
+  joint_speed_penalty = float(np.sum(diag.get("penalty_joint_speed", 0.0)))
+
   if "contact_any" in diag:
     contact_any_ratio = float(np.mean(diag["contact_any"]))
   else:
     contact_any_ratio = 0.0
 
-  success = (
-      rotate_reward >= TRICO_SUCCESS_ROTATE_THRESHOLD
-      and tip_penalty <= TRICO_SUCCESS_TIP_PENALTY_THRESHOLD
-      and tip_y_penalty <= TRICO_SUCCESS_TIP_Y_THRESHOLD
-  )
-
-  reasons = []
-  if rotate_reward < TRICO_SUCCESS_ROTATE_THRESHOLD:
-    reasons.append(
-        f"rotate_reward<{TRICO_SUCCESS_ROTATE_THRESHOLD:.1f}"
+  if primary_name == "rotate_reward":
+    success = (
+        primary_reward >= TRICO_SUCCESS_ROTATE_THRESHOLD
+        and tip_penalty <= TRICO_SUCCESS_TIP_PENALTY_THRESHOLD
+        and tip_y_penalty <= TRICO_SUCCESS_TIP_Y_THRESHOLD
     )
-  if tip_penalty > TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:
-    reasons.append(f"tip_penalty>{TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:.1f}")
-  if tip_y_penalty > TRICO_SUCCESS_TIP_Y_THRESHOLD:
-    reasons.append(f"tip_y_penalty>{TRICO_SUCCESS_TIP_Y_THRESHOLD:.1f}")
+    reasons = []
+    if primary_reward < TRICO_SUCCESS_ROTATE_THRESHOLD:
+      reasons.append(f"rotate_reward<{TRICO_SUCCESS_ROTATE_THRESHOLD:.1f}")
+    if tip_penalty > TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:
+      reasons.append(f"tip_penalty>{TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:.1f}")
+    if tip_y_penalty > TRICO_SUCCESS_TIP_Y_THRESHOLD:
+      reasons.append(f"tip_y_penalty>{TRICO_SUCCESS_TIP_Y_THRESHOLD:.1f}")
+  else:
+    success = tip_penalty <= TRICO_SUCCESS_TIP_PENALTY_THRESHOLD
+    reasons = []
+    if tip_penalty > TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:
+      reasons.append(f"tip_penalty>{TRICO_SUCCESS_TIP_PENALTY_THRESHOLD:.1f}")
 
   return {
       "success": bool(success),
-      "rotate_reward": rotate_reward,
+      "primary_reward": primary_reward,
+      "primary_name": primary_name,
       "tip_penalty": tip_penalty,
       "tip_y_penalty": tip_y_penalty,
+      "joint_speed_penalty": joint_speed_penalty,
       "contact_any_ratio": contact_any_ratio,
       "episode_length": int(episode_length),
       "thresholds": {
@@ -567,9 +581,10 @@ def main():
       print(
         "Success verdict: "
         f"{success_summary['success']} | "
-        f"rotate_reward={success_summary['rotate_reward']:.2f} | "
+          f"{success_summary['primary_name']}={success_summary['primary_reward']:.2f} | "
         f"tip_penalty={success_summary['tip_penalty']:.2f} | "
         f"tip_y_penalty={success_summary['tip_y_penalty']:.2f} | "
+          f"joint_speed_penalty={success_summary['joint_speed_penalty']:.2f} | "
         f"contact_ratio={success_summary['contact_any_ratio']:.3f}"
       )
       continue
@@ -592,9 +607,10 @@ def main():
       print(
         "Success verdict: "
         f"{success_summary['success']} | "
-        f"rotate_reward={success_summary['rotate_reward']:.2f} | "
+          f"{success_summary['primary_name']}={success_summary['primary_reward']:.2f} | "
         f"tip_penalty={success_summary['tip_penalty']:.2f} | "
         f"tip_y_penalty={success_summary['tip_y_penalty']:.2f} | "
+          f"joint_speed_penalty={success_summary['joint_speed_penalty']:.2f} | "
         f"contact_ratio={success_summary['contact_any_ratio']:.3f}"
       )
 

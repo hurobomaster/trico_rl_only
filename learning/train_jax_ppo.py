@@ -307,6 +307,21 @@ _TRICO_REACH_DISTANCE_SCALE = flags.DEFINE_float(
   None,
   "Override TricoDriverSingle reach distance exponential scale.",
 )
+_TRICO_TARGET_RADIUS = flags.DEFINE_float(
+  "trico_target_radius",
+  None,
+  "Override TricoDriverSingleReach target radius in meters.",
+)
+_TRICO_MAX_JOINT_DELTA_DEG_PER_STEP = flags.DEFINE_float(
+  "trico_max_joint_delta_deg_per_step",
+  None,
+  "Override TricoDriverSingleReach max joint delta in deg per control step.",
+)
+_TRICO_JOINT_SPEED_PENALTY_SCALE = flags.DEFINE_float(
+  "trico_joint_speed_penalty_scale",
+  None,
+  "Override TricoDriverSingleReach joint speed penalty scale.",
+)
 
 
 def get_rl_config(env_name: str) -> config_dict.ConfigDict:
@@ -494,6 +509,17 @@ def main(argv):
       env_cfg.reach_reward_scale = _TRICO_REACH_REWARD_SCALE.value
     if _TRICO_REACH_DISTANCE_SCALE.value is not None:
       env_cfg.reach_distance_scale = _TRICO_REACH_DISTANCE_SCALE.value
+    if _ENV_NAME.value == "TricoDriverSingleReach":
+      if _TRICO_TARGET_RADIUS.value is not None:
+        env_cfg.target_radius = _TRICO_TARGET_RADIUS.value
+      if _TRICO_MAX_JOINT_DELTA_DEG_PER_STEP.value is not None:
+        env_cfg.max_joint_delta_deg_per_step = (
+            _TRICO_MAX_JOINT_DELTA_DEG_PER_STEP.value
+        )
+      if _TRICO_JOINT_SPEED_PENALTY_SCALE.value is not None:
+        env_cfg.joint_speed_penalty_scale = (
+            _TRICO_JOINT_SPEED_PENALTY_SCALE.value
+        )
 
   ppo_params = get_rl_config(_ENV_NAME.value)
 

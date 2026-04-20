@@ -38,7 +38,7 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
     if "action_repeat" not in config:
       config.action_repeat = 1
     if "target_radius" not in config:
-      config.target_radius = 0.04
+      config.target_radius = 0.06
     if "reach_reward_scale" not in config:
       config.reach_reward_scale = 1.0
     if "reach_distance_scale" not in config:
@@ -48,11 +48,11 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
     if "allowed_tip_penetration" not in config:
       config.allowed_tip_penetration = 0.005
     if "delta_action_penalty_scale" not in config:
-      config.delta_action_penalty_scale = 0.0
+      config.delta_action_penalty_scale = 0.01
     if "max_joint_delta_deg_per_step" not in config:
-      config.max_joint_delta_deg_per_step = 1.0
+      config.max_joint_delta_deg_per_step = 0.3
     if "joint_speed_penalty_scale" not in config:
-      config.joint_speed_penalty_scale = 5.0
+      config.joint_speed_penalty_scale = 0.6
     if "hand_init_noise_scale" not in config:
       config.hand_init_noise_scale = 0.02
     if "action_min_delay" not in config:
@@ -173,6 +173,7 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
         "penalty_tip_penetration": jnp.array(0.0, dtype=jnp.float32),
         "penalty_delta_action": jnp.array(0.0, dtype=jnp.float32),
       "penalty_joint_speed": jnp.array(0.0, dtype=jnp.float32),
+      "max_joint_delta_deg": jnp.array(0.0, dtype=jnp.float32),
         "mean_tip_dist": jnp.array(0.0, dtype=jnp.float32),
         "driver_joint_pos": jnp.array(0.0, dtype=jnp.float32),
         "driver_joint_vel": jnp.array(0.0, dtype=jnp.float32),
@@ -253,9 +254,13 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
 
     qpos_act_curr = data.qpos[self._actuator_qpos_adr]
     joint_delta = jnp.abs(qpos_act_curr - state.info["last_qpos_act"])
-    joint_delta_excess = jnp.maximum(0.0, joint_delta - self._max_joint_delta_per_step)
+    joint_delta_excess = jnp.maximum(
+      0.0, joint_delta - self._max_joint_delta_per_step
+    )
+    joint_delta_excess_deg = jnp.rad2deg(joint_delta_excess)
+    max_joint_delta_deg = jnp.max(jnp.rad2deg(joint_delta))
     joint_speed_penalty = self._joint_speed_penalty_scale * jnp.mean(
-      jnp.square(joint_delta_excess)
+      jnp.square(joint_delta_excess_deg)
     )
 
     obs = self._get_obs(data)
@@ -281,6 +286,7 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
         "penalty_tip_penetration": penetration_penalty,
         "penalty_delta_action": delta_action_penalty,
         "penalty_joint_speed": joint_speed_penalty,
+        "max_joint_delta_deg": max_joint_delta_deg,
         "mean_tip_dist": jnp.mean(tip_dists),
         "driver_joint_pos": driver_joint_pos,
         "driver_joint_vel": driver_joint_vel_signed,
@@ -292,7 +298,8 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
           (
               "mean_tip_dist={dist:.4f} outside={outside:.4f} "
               "r_reach={rreach:.3f} p_tip={ptip:.3f} "
-                "p_delta={pdelta:.3f} p_joint={pjoint:.3f} reward={rew:.3f}"
+                "p_delta={pdelta:.3f} p_joint={pjoint:.3f} "
+                "max_dq_deg={maxdq:.2f} reward={rew:.3f}"
           ),
           dist=jnp.mean(tip_dists),
           outside=mean_outside_dist,
@@ -300,6 +307,7 @@ class TricoDriverSingleReachEnv(mjx_env.MjxEnv):
           ptip=penetration_penalty,
           pdelta=delta_action_penalty,
               pjoint=joint_speed_penalty,
+              maxdq=max_joint_delta_deg,
           rew=reward,
       )
 
@@ -346,14 +354,14 @@ def default_config() -> config_dict.ConfigDict:
       sim_dt=0.001,
       episode_length=1000,
       action_repeat=1,
-      target_radius=0.04,
+      target_radius=0.06,
       reach_reward_scale=1.0,
       reach_distance_scale=25.0,
       tip_penetration_penalty_scale=150.0,
       allowed_tip_penetration=0.005,
-      delta_action_penalty_scale=0.0,
-      max_joint_delta_deg_per_step=1.0,
-      joint_speed_penalty_scale=5.0,
+      delta_action_penalty_scale=0.01,
+      max_joint_delta_deg_per_step=0.3,
+      joint_speed_penalty_scale=0.6,
       hand_init_noise_scale=0.02,
       action_min_delay=0,
       action_max_delay=0,
