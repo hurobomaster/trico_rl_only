@@ -35,7 +35,10 @@ from mujoco_playground._src.manipulation.trico import (
     trico_driver_single as trico_driver_single_env,
 )
 from mujoco_playground._src.manipulation.trico import (
-  trico_driver_single_reach as trico_driver_single_reach_env,
+    trico_driver_single_reach as trico_driver_single_reach_env,
+)
+from mujoco_playground._src.manipulation.trico import (
+    trico_driver_single_novel_obs as trico_driver_single_novel_obs_env,
 )
 from mujoco_playground._src.manipulation.trico import randomize as trico_randomize
 
@@ -56,6 +59,7 @@ _envs = {
     "TricoDriverSingleReach": (
       trico_driver_single_reach_env.TricoDriverSingleReachEnv
     ),
+    "TricoDriverSingleNovelObs": trico_driver_single_novel_obs_env.TricoDriverSingleNovelObsEnv,
 }
 
 _cfgs = {
@@ -73,6 +77,7 @@ _cfgs = {
     "TricoDriver": trico_driver_env.default_config,
     "TricoDriverSingle": trico_driver_single_env.default_config,
     "TricoDriverSingleReach": trico_driver_single_reach_env.default_config,
+    "TricoDriverSingleNovelObs": trico_driver_single_novel_obs_env.default_config,
 }
 
 _randomizer = {
@@ -82,6 +87,7 @@ _randomizer = {
     "TricoDriver": trico_randomize.domain_randomize,
     "TricoDriverSingle": trico_randomize.domain_randomize,
     "TricoDriverSingleReach": trico_randomize.domain_randomize,
+    "TricoDriverSingleNovelObs": trico_randomize.domain_randomize,
 }
 
 
@@ -138,6 +144,7 @@ def load(
       "TricoDriver",
       "TricoDriverSingle",
       "TricoDriverSingleReach",
+      "TricoDriverSingleNovelObs",
   }:
     mjx_env.ensure_menagerie_exists()
   if env_name not in _envs:

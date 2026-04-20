@@ -16,6 +16,8 @@
 
 import datetime
 import functools
+import importlib
+import io
 import json
 import os
 from pathlib import Path
@@ -23,6 +25,9 @@ import re
 import sys
 import time
 import warnings
+import builtins
+from contextlib import redirect_stderr
+from contextlib import redirect_stdout
 
 # Configure JAX/MuJoCo before importing libraries that read these env vars.
 xla_flags = os.environ.get("XLA_FLAGS", "")
@@ -33,6 +38,25 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("JAX_PLATFORM_NAME", "gpu")
+
+
+# --- Suppress optional NVIDIA Warp backend warnings during import --------
+# mujoco.mjx.warp.__init__ prints "Failed to import warp/mujoco_warp" when
+# the warp package is absent.  This is harmless for JAX-only training but
+# clutters the console.  We override builtins.print BEFORE any library that
+# transitively imports mujoco (e.g. brax) is loaded.
+_ORIG_PRINT = builtins.print
+
+
+def _startup_filtered_print(*args, **kwargs):
+  if args and isinstance(args[0], str):
+    msg = args[0]
+    if msg.startswith(("Failed to import warp:", "Failed to import mujoco_warp:")):
+      return
+  return _ORIG_PRINT(*args, **kwargs)
+
+
+builtins.print = _startup_filtered_print
 
 from absl import app
 from absl import flags
@@ -45,15 +69,40 @@ import jax
 import jax.numpy as jp
 import mediapy as media
 from ml_collections import config_dict
-import mujoco
-import mujoco_playground
-from mujoco_playground import registry
-from mujoco_playground import wrapper
-from mujoco_playground.config import dm_control_suite_params
-from mujoco_playground.config import locomotion_params
-from mujoco_playground.config import manipulation_params
 import tensorboardX
 from tqdm import tqdm
+
+
+def _import_mujoco_stack_silenced():
+  """Import mujoco + mujoco_playground while silencing optional warp prints.
+
+  MuJoCo's Python package may print
+    "Failed to import warp: ..."
+    "Failed to import mujoco_warp: ..."
+  when Warp is not installed. These are expected for JAX-only training.
+  """
+  sink = io.StringIO()
+  with redirect_stdout(sink), redirect_stderr(sink):
+    mj = importlib.import_module("mujoco")
+    mp = importlib.import_module("mujoco_playground")
+    dmc = importlib.import_module("mujoco_playground.config.dm_control_suite_params")
+    loco = importlib.import_module("mujoco_playground.config.locomotion_params")
+    mani = importlib.import_module("mujoco_playground.config.manipulation_params")
+  return mj, mp, mp.registry, mp.wrapper, dmc, loco, mani
+
+
+(
+    mujoco,
+    mujoco_playground,
+    registry,
+    wrapper,
+    dm_control_suite_params,
+    locomotion_params,
+    manipulation_params,
+ ) = _import_mujoco_stack_silenced()
+
+# Restore normal print behavior after startup imports.
+builtins.print = _ORIG_PRINT
 
 
 def _import_wandb():
@@ -362,7 +411,7 @@ def rscope_fn(full_states, obs, rew, done):
 def _maybe_override_trico_driver_xml() -> None:
   """Optionally redirects TricoDriver XML loading for this process."""
   if (
-      _ENV_NAME.value not in {"TricoDriver", "TricoDriverSingle"}
+      _ENV_NAME.value not in {"TricoDriver", "TricoDriverSingle", "TricoDriverSingleNovelObs"}
       or not _TRICO_DRIVER_XML.value
   ):
     mujoco.MjModel.from_xml_path = _ORIG_MJMODEL_FROM_XML_PATH
@@ -445,11 +494,25 @@ def _build_experiment_name(timestamp: str, experiment_label: str) -> str:
   return "-".join(name_parts)
 
 
+def _ensure_novel_obs_registered():
+  """Lazily register TricoDriverSingleNovelObs if not already present."""
+  if "TricoDriverSingleNovelObs" not in manipulation._envs:
+    from mujoco_playground._src.manipulation.trico import (
+        trico_driver_single_novel_obs as _novel,
+    )
+    manipulation.register_environment(
+        "TricoDriverSingleNovelObs",
+        _novel.TricoDriverSingleNovelObsEnv,
+        _novel.default_config,
+    )
+
+
 def main(argv):
   """Run training and evaluation for the specified environment."""
 
   del argv
 
+  _ensure_novel_obs_registered()
   _maybe_override_trico_driver_xml()
 
   # Load environment configuration
@@ -475,12 +538,14 @@ def main(argv):
       "TricoDriver",
       "TricoDriverSingle",
       "TricoDriverSingleReach",
+      "TricoDriverSingleNovelObs",
   }:
     if _TRICO_ROTATE_REWARD_SCALE.value is not None:
       env_cfg.rotate_reward_scale = _TRICO_ROTATE_REWARD_SCALE.value
     if dr_mode == "strong-dr-v2" and _ENV_NAME.value in {
       "TricoDriverSingle",
       "TricoDriverSingleReach",
+      "TricoDriverSingleNovelObs",
     }:
       # Aggressive deployment-oriented robustness: random action delay in [0, 5].
       env_cfg.action_min_delay = 0
@@ -809,7 +874,7 @@ def main(argv):
 
     # --- 计算 success ratio (Trico 环境特定逻辑) ---
     metrics_to_log = dict(metrics)
-    if _ENV_NAME.value in {"TricoDriver", "TricoDriverSingle"}:
+    if _ENV_NAME.value in {"TricoDriver", "TricoDriverSingle", "TricoDriverSingleNovelObs"}:
       # 从eval metrics中提取必要的指标，计算success ratio
       def _get_eval_metric(keys):
         """Helper to get the first matching eval metric from the keys tuple."""
