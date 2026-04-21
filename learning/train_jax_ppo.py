@@ -496,11 +496,11 @@ def _build_experiment_name(timestamp: str, experiment_label: str) -> str:
 
 def _ensure_novel_obs_registered():
   """Lazily register TricoDriverSingleNovelObs if not already present."""
-  if "TricoDriverSingleNovelObs" not in manipulation._envs:
+  if "TricoDriverSingleNovelObs" not in mujoco_playground.manipulation._envs:
     from mujoco_playground._src.manipulation.trico import (
         trico_driver_single_novel_obs as _novel,
     )
-    manipulation.register_environment(
+    mujoco_playground.manipulation.register_environment(
         "TricoDriverSingleNovelObs",
         _novel.TricoDriverSingleNovelObsEnv,
         _novel.default_config,

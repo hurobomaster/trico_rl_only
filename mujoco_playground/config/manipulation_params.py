@@ -68,6 +68,7 @@ def brax_ppo_config(
   elif env_name in {
       "TricoDriver",
       "TricoDriverSingle",
+      "TricoDriverSingleNovelObs",
       "TricoDriverSingleReach",
   }:
     rl_config.episode_length = 1000

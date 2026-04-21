@@ -5,8 +5,9 @@
   - reset / step 不再计算或追加 8 维离散速度
   - info["obs_history"] 语义从"668维完整obs"变为"660维纯位置历史"
 
-其余奖励、动力学、动作空间、终止条件与原 TricoDriverSingleEnv 完全一致，
-保证消融实验中只有观测维度不同。
+其余奖励项基本保持一致，但控制链路增加两层约束：
+    - 一阶执行器低通（first-order lag）
+    - 单步关节目标变化硬限制（默认 0.1 rad/step）
 """
 
 import os
@@ -78,6 +79,11 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
             config.obs_noise_std = 0.0
         if "action_noise_std" not in config:
             config.action_noise_std = 0.0
+        if "max_joint_delta_rad_per_step" not in config:
+            config.max_joint_delta_rad_per_step = 0.1
+        if "actuator_lag_alpha" not in config:
+            # y_t = y_{t-1} + alpha * (u_t - y_{t-1}), alpha 越小越平滑。
+            config.actuator_lag_alpha = 0.35
 
         super().__init__(config=config)
 
@@ -132,6 +138,8 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
         self._action_history_len = int(config.action_history_len)
         self._obs_noise_std = float(config.obs_noise_std)
         self._action_noise_std = float(config.action_noise_std)
+        self._max_joint_delta_per_step = float(config.max_joint_delta_rad_per_step)
+        self._actuator_lag_alpha = float(config.actuator_lag_alpha)
         if self._action_history_len <= 0:
             raise ValueError("action_history_len must be positive")
         if self._action_min_delay < 0:
@@ -142,6 +150,10 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
             raise ValueError(
                 "action_max_delay must be smaller than action_history_len"
             )
+        if self._max_joint_delta_per_step <= 0.0:
+            raise ValueError("max_joint_delta_rad_per_step must be positive")
+        if not (0.0 < self._actuator_lag_alpha <= 1.0):
+            raise ValueError("actuator_lag_alpha must be in (0, 1]")
         self._single_action_size = 4
         # 8 joint angles + 2 contacts + 6 tip xyz + 6 relative vectors = 22 per frame.
         self._obs_frame_size = 22
@@ -210,6 +222,7 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
         info = {
             "rng": rng,
             "last_action": jnp.zeros(self.action_size, dtype=jnp.float32),
+            "last_motor_targets": init_ctrl,
             "action_history": jnp.zeros(
                 self._action_history_len * self.action_size, dtype=jnp.float32
             ),
@@ -242,7 +255,23 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
         mirrored_action = jnp.concatenate([action_w_delay, action_w_delay])
         ctrl_center = (self._ctrlrange[:, 0] + self._ctrlrange[:, 1]) * 0.5
         ctrl_half = (self._ctrlrange[:, 1] - self._ctrlrange[:, 0]) * 0.5
-        motor_targets = ctrl_center + mirrored_action * ctrl_half
+        motor_targets_desired = ctrl_center + mirrored_action * ctrl_half
+        motor_targets_desired = jnp.clip(
+            motor_targets_desired, self._ctrlrange[:, 0], self._ctrlrange[:, 1]
+        )
+
+        last_motor_targets = state.info["last_motor_targets"]
+        # 一阶低通，模拟执行器有限响应速度。
+        motor_targets_lpf = last_motor_targets + self._actuator_lag_alpha * (
+            motor_targets_desired - last_motor_targets
+        )
+        # 硬限制每步角度变化，避免仿真动作速度超过真机能力。
+        motor_delta = jnp.clip(
+            motor_targets_lpf - last_motor_targets,
+            -self._max_joint_delta_per_step,
+            self._max_joint_delta_per_step,
+        )
+        motor_targets = last_motor_targets + motor_delta
         motor_targets = jnp.clip(
             motor_targets, self._ctrlrange[:, 0], self._ctrlrange[:, 1]
         )
@@ -344,6 +373,7 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
             **state.info,
             "rng": rng,
             "last_action": action_w_delay,
+            "last_motor_targets": motor_targets,
             "action_history": action_history,
             "obs_history": obs,  # 660维纯位置历史
         }
@@ -421,4 +451,6 @@ def default_config() -> config_dict.ConfigDict:
         action_min_delay=0,
         action_max_delay=0,
         action_history_len=6,
+        max_joint_delta_rad_per_step=0.1,
+        actuator_lag_alpha=0.35,
     )
