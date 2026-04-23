@@ -41,6 +41,19 @@ TRICO_SUCCESS_TIP_Y_THRESHOLD = 1.0
 _ORIG_MJMODEL_FROM_XML_PATH = mujoco.MjModel.from_xml_path
 
 
+def _ensure_novel_obs_registered() -> None:
+  if "TricoDriverSingleNovelObs" in mujoco_playground.manipulation._envs:
+    return
+  from mujoco_playground._src.manipulation.trico import (
+      trico_driver_single_novel_obs as _novel,
+  )
+  mujoco_playground.manipulation.register_environment(
+      "TricoDriverSingleNovelObs",
+      _novel.TricoDriverSingleNovelObsEnv,
+      _novel.default_config,
+  )
+
+
 def _get_rl_config(env_name: str) -> config_dict.ConfigDict:
   if env_name in mujoco_playground.manipulation._envs:
     return manipulation_params.brax_ppo_config(env_name, "jax")
@@ -52,7 +65,11 @@ def _get_rl_config(env_name: str) -> config_dict.ConfigDict:
 
 
 def _maybe_override_trico_driver_xml(env_name: str, xml_name: str | None) -> None:
-  if env_name not in {"TricoDriver", "TricoDriverSingle"} or not xml_name:
+  if env_name not in {
+      "TricoDriver",
+      "TricoDriverSingle",
+      "TricoDriverSingleNovelObs",
+  } or not xml_name:
     mujoco.MjModel.from_xml_path = _ORIG_MJMODEL_FROM_XML_PATH
     return
 
@@ -178,7 +195,11 @@ def _sensor_slice(model: mujoco.MjModel, sensor_name: str):
 
 
 def _prepare_trico_plot_handles(env):
-  if env.__class__.__name__ not in {"TricoDriverEnv", "TricoDriverSingleEnv"}:
+  if env.__class__.__name__ not in {
+      "TricoDriverEnv",
+      "TricoDriverSingleEnv",
+      "TricoDriverSingleNovelObsEnv",
+  }:
     return None
 
   model = env.mj_model
@@ -194,7 +215,10 @@ def _prepare_trico_plot_handles(env):
       min_tip_center_dist=float(getattr(env, "_min_tip_center_dist", 0.0)),
       right_force_slice=right_force_slice,
       left_force_slice=left_force_slice,
-      has_tip_y_penalty=env.__class__.__name__ == "TricoDriverSingleEnv",
+        has_tip_y_penalty=env.__class__.__name__ in {
+          "TricoDriverSingleEnv",
+          "TricoDriverSingleNovelObsEnv",
+        },
   )
 
 
@@ -533,6 +557,7 @@ def main():
   )
   args = parser.parse_args()
 
+  _ensure_novel_obs_registered()
   _maybe_override_trico_driver_xml(args.env_name, args.trico_driver_xml)
   checkpoints_root, checkpoint_dirs = _resolve_checkpoints(Path(args.checkpoint_path))
   if args.latest_only:

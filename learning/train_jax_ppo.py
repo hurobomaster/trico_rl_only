@@ -728,6 +728,7 @@ def main(argv):
     if _ENV_NAME.value in (
       "TricoDriver",
       "TricoDriverSingle",
+      "TricoDriverSingleNovelObs",
       "TricoDriverSingleReach",
     ):
       from mujoco_playground._src.manipulation.trico import randomize as trico_randomize

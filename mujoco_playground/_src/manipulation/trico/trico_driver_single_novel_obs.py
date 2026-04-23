@@ -80,7 +80,8 @@ class TricoDriverSingleNovelObsEnv(mjx_env.MjxEnv):
         if "action_noise_std" not in config:
             config.action_noise_std = 0.0
         if "max_joint_delta_rad_per_step" not in config:
-            config.max_joint_delta_rad_per_step = 0.1
+            # 3 deg/step = 0.0523598776 rad/step.
+            config.max_joint_delta_rad_per_step = 0.0523598776
         if "actuator_lag_alpha" not in config:
             # y_t = y_{t-1} + alpha * (u_t - y_{t-1}), alpha 越小越平滑。
             config.actuator_lag_alpha = 0.35
@@ -451,6 +452,6 @@ def default_config() -> config_dict.ConfigDict:
         action_min_delay=0,
         action_max_delay=0,
         action_history_len=6,
-        max_joint_delta_rad_per_step=0.1,
+        max_joint_delta_rad_per_step=0.0523598776,  # 3 deg/step
         actuator_lag_alpha=0.35,
     )
